@@ -51,25 +51,20 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         super.onCreate()
         Log.d(TAG, "Jarvis Service initialized.")
 
-        // 1. Acquire Partial WakeLock to keep CPU running with screen off
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JARVIS::BackgroundAudioLock")
         wakeLock?.acquire()
 
-        // 2. Initialize Text-to-Speech
         tts = TextToSpeech(this, this)
 
-        // 3. Start Foreground Notification
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildForegroundNotification("Monitoring audio for 'Jarvis'..."))
 
-        // 4. Setup Speech Recognizer
         setupSpeechRecognizer()
         startListeningLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Handle voice announcements from BatteryReceiver
         val speakExtra = intent?.getStringExtra("SPEAK_TEXT")
         if (!speakExtra.isNullOrEmpty()) {
             speak(speakExtra)
@@ -151,8 +146,10 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
                     recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                        // Multilingual voice recognition (Hindi, Hinglish, English auto-detection)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("hi-IN", "en-IN", "en-US", "hi"))
+                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     }
                 }
@@ -183,7 +180,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun processRecognizedText(text: String) {
-        val wakeWords = listOf("jarvis", "hey jarvis", "jarwish", "hey jarwish", "ok jarvis")
+        val wakeWords = listOf("jarvis", "hey jarvis", "jarwish", "hey jarwish", "ok jarvis", "जार्विस", "हे जार्विस", "suno jarvis")
         val isWakeWordTriggered = wakeWords.any { text.contains(it) }
 
         if (isWakeWordTriggered) {
@@ -199,7 +196,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             if (command.isEmpty()) {
-                speak("At your service, Sir. What can I do for you?")
+                speak("Haan Sir, boliye kya madad kar sakta hoon? At your service.")
             } else {
                 executeDirective(command)
             }
@@ -245,10 +242,17 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
         when {
             // ==========================================
-            // 1. Phone Calling
+            // 1. Phone Calling (English & Hindi)
             // ==========================================
-            command.contains("call ") -> {
-                val rawTarget = command.substringAfter("call ").trim()
+            command.contains("call ") || command.contains("phone lagao") || command.contains("call lagao") || command.contains("phone karo") -> {
+                val rawTarget = command
+                    .replace("call lagao", "")
+                    .replace("phone lagao", "")
+                    .replace("phone karo", "")
+                    .replace("ko call", "")
+                    .replace("ko phone", "")
+                    .replace("call", "")
+                    .trim()
                 val digitsOnly = rawTarget.filter { it.isDigit() }
                 val dialIntent = if (digitsOnly.length >= 3) {
                     Intent(Intent.ACTION_DIAL, Uri.parse("tel:$digitsOnly"))
@@ -257,7 +261,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 }
                 dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(dialIntent)
-                speak("Initiating call directive for $rawTarget, Sir.")
+                speak("Theek hai Sir, $rawTarget ko call laga raha hoon.")
             }
 
             // ==========================================
@@ -265,8 +269,13 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             // ==========================================
             command.contains("whatsapp") -> {
                 var message = "Hello from Jarvis"
-                if (command.contains("message") || command.contains("send")) {
-                    message = command.substringAfter("whatsapp").replace("message", "").replace("send", "").trim()
+                if (command.contains("message") || command.contains("send") || command.contains("bhejo")) {
+                    message = command.substringAfter("whatsapp")
+                        .replace("message", "")
+                        .replace("send", "")
+                        .replace("bhejo", "")
+                        .replace("par", "")
+                        .trim()
                     if (message.isEmpty()) message = "Hello"
                 }
                 val sendIntent = Intent(Intent.ACTION_VIEW).apply {
@@ -276,7 +285,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 }
                 try {
                     startActivity(sendIntent)
-                    speak("Opening WhatsApp with your message, Sir.")
+                    speak("WhatsApp open kar diya hai, Sir.")
                 } catch (e: Exception) {
                     launchPackage("com.whatsapp", "WhatsApp")
                 }
@@ -285,15 +294,22 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             // ==========================================
             // 3. Find My Phone / Siren Alert
             // ==========================================
-            command.contains("where are you") || command.contains("find my phone") || command.contains("find phone") -> {
+            command.contains("where are you") || command.contains("find my phone") || 
+            command.contains("kahan ho") || command.contains("kidhar ho") || command.contains("phone dhoondho") -> {
                 findMyPhoneAlarm()
             }
 
             // ==========================================
             // 4. GPS Navigation & Google Maps
             // ==========================================
-            command.contains("navigate to") || command.contains("directions to") -> {
-                val destination = command.substringAfter("to").trim()
+            command.contains("navigate to") || command.contains("directions to") || 
+            command.contains("rasta dikhao") || command.contains("jaana hai") -> {
+                val destination = command
+                    .replace("rasta dikhao", "")
+                    .replace("ka rasta", "")
+                    .replace("jaana hai", "")
+                    .substringAfter("to")
+                    .trim()
                 val gmmIntentUri = Uri.parse("google.navigation:q=${Uri.encode(destination)}")
                 val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
                     setPackage("com.google.android.apps.maps")
@@ -301,104 +317,120 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 }
                 try {
                     startActivity(mapIntent)
-                    speak("Plotting course to $destination, Sir.")
+                    speak("Theek hai Sir, $destination ka rasta Google Maps par dikha raha hoon.")
                 } catch (e: Exception) {
-                    speak("Google Maps navigation unavailable, Sir.")
+                    speak("Google Maps open nahi ho saka, Sir.")
                 }
             }
 
             // ==========================================
-            // 5. Flashlight / Torch
+            // 5. Flashlight / Torch (Hindi & English)
             // ==========================================
-            command.contains("flashlight on") || command.contains("torch on") -> {
+            command.contains("flashlight on") || command.contains("torch on") || 
+            command.contains("torch jalao") || command.contains("torch chalu") || command.contains("light jalao") || command.contains("batti jalao") -> {
                 toggleTorch(true)
-                speak("Illumination systems activated, Sir.")
+                speak("Torch jala di gayi hai, Sir. Illumination online.")
             }
-            command.contains("flashlight off") || command.contains("torch off") -> {
+            command.contains("flashlight off") || command.contains("torch off") || 
+            command.contains("torch band") || command.contains("torch bujha") || command.contains("light band") -> {
                 toggleTorch(false)
-                speak("Illumination disabled, Sir.")
+                speak("Torch band kar di gayi hai, Sir.")
             }
 
             // ==========================================
             // 6. Media & Music Playback
             // ==========================================
-            command.startsWith("play ") || command.contains("on youtube") -> {
-                val query = command.replace("play", "").replace("on youtube", "").trim()
+            command.startsWith("play ") || command.contains("on youtube") || 
+            command.contains("gaana bajao") || command.contains("gaana chalao") || command.contains("sunao") -> {
+                val query = command
+                    .replace("gaana bajao", "")
+                    .replace("gaana chalao", "")
+                    .replace("sunao", "")
+                    .replace("play", "")
+                    .replace("on youtube", "")
+                    .trim()
                 val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(ytIntent)
-                speak("Searching and playing $query on YouTube, Sir.")
+                speak("Theek hai Sir, $query YouTube par chala raha hoon.")
             }
 
             // ==========================================
             // 7. Universal App Launcher (Opens ANY App on Phone)
             // ==========================================
-            command.startsWith("open ") || command.startsWith("launch ") || command.startsWith("kholo ") -> {
-                val appTarget = command.replace("open", "").replace("launch", "").replace("kholo", "").trim()
+            command.startsWith("open ") || command.startsWith("launch ") || 
+            command.contains("kholo") || command.contains("chalao") || command.contains("chalu karo") -> {
+                val appTarget = command
+                    .replace("open", "")
+                    .replace("launch", "")
+                    .replace("kholo", "")
+                    .replace("chalu karo", "")
+                    .replace("chalao", "")
+                    .trim()
                 val opened = launchAppByName(appTarget)
                 if (!opened) {
                     val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(appTarget)}")).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     startActivity(searchIntent)
-                    speak("I could not find $appTarget on your phone, Sir. Opening web results.")
+                    speak("Phone mein $appTarget nahi mila Sir, Google search khol diya hai.")
                 }
             }
 
             // ==========================================
-            // 8. Volume Controls
+            // 8. Volume Controls (Hindi & English)
             // ==========================================
-            command.contains("max volume") -> {
+            command.contains("max volume") || command.contains("full aawaz") || command.contains("puri aawaz") -> {
                 val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
-                speak("Audio output set to maximum, Sir.")
+                speak("Aawaz full 100% kar di hai, Sir.")
             }
-            command.contains("volume up") -> {
+            command.contains("volume up") || command.contains("aawaz badhao") || command.contains("aawaz tez") -> {
                 adjustVolume(AudioManager.ADJUST_RAISE)
-                speak("Increasing master audio, Sir.")
+                speak("Aawaz badha di gayi hai, Sir.")
             }
-            command.contains("volume down") -> {
+            command.contains("volume down") || command.contains("aawaz kam") || command.contains("aawaz dheemi") -> {
                 adjustVolume(AudioManager.ADJUST_LOWER)
-                speak("Decreasing master audio, Sir.")
+                speak("Aawaz kam kar di hai, Sir.")
             }
-            command.contains("mute") -> {
+            command.contains("mute") || command.contains("aawaz band") || command.contains("silent") -> {
                 val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
-                speak("Master audio muted, Sir.")
+                speak("Phone silent kar diya hai, Sir.")
             }
 
             // ==========================================
             // 9. Time & Date Telemetry
             // ==========================================
-            command.contains("time") -> {
+            command.contains("time") || command.contains("baje") || command.contains("samay") -> {
                 val timeStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-                speak("The current time is $timeStr, Sir.")
+                speak("Abhi time $timeStr ho raha hai, Sir.")
             }
-            command.contains("date") -> {
+            command.contains("date") || command.contains("tarikh") || command.contains("din") -> {
                 val dateStr = SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.getDefault()).format(Date())
-                speak("Today's date is $dateStr, Sir.")
+                speak("Aaj $dateStr hai, Sir.")
             }
 
             // ==========================================
             // 10. AI Wit & Conversational Intelligence
             // ==========================================
-            command.contains("how are you") -> {
-                speak("Operating at peak efficiency, Sir. Power grids nominal.")
+            command.contains("kaise ho") || command.contains("how are you") -> {
+                speak("Main bilkul theek aur 100% active hoon Sir! Aap batayein kya sewa karoon?")
             }
-            command.contains("who are you") -> {
-                speak("I am JARVIS, your personal artificial intelligence assistant built by Stark Industries.")
+            command.contains("tum kaun ho") || command.contains("who are you") || command.contains("naam kya hai") -> {
+                speak("Main JARVIS hoon Sir, aapka personal artificial intelligence voice assistant!")
             }
-            command.contains("joke") -> {
-                speak("I asked my database for a witty joke, Sir, but all it returned was Error 404: Humor not found.")
+            command.contains("joke") || command.contains("chutkula") -> {
+                speak("Teacher ne bachhe se poocha: Batao sabse tez kaun chalta hai? Bachha bola: Sir, Mummy ka belan! Haha!")
             }
             else -> {
                 val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(command)}")).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(searchIntent)
-                speak("Here are the direct results for $command, Sir.")
+                speak("Aapke sawal $command ka direct answer Google par open kar diya hai, Sir.")
             }
         }
 
@@ -416,15 +448,14 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             val ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)
             ringtone?.play()
 
-            // Flash torch 3 times
             toggleTorch(true)
             mainHandler.postDelayed({ toggleTorch(false) }, 500)
             mainHandler.postDelayed({ toggleTorch(true) }, 1000)
             mainHandler.postDelayed({ toggleTorch(false) }, 1500)
 
-            speak("I am right here, Sir! All visual and acoustic beacons activated.")
+            speak("Main yahi par hoon Sir! All visual and acoustic beacons active!")
         } catch (e: Exception) {
-            speak("I am right here, Sir!")
+            speak("Main yahi par hoon Sir!")
         }
     }
 
@@ -444,7 +475,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                     if (launchIntent != null) {
                         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(launchIntent)
-                        speak("Launching ${info.loadLabel(pm)}, Sir.")
+                        speak("${info.loadLabel(pm)} open kar diya hai, Sir.")
                         return true
                     }
                 }
@@ -461,9 +492,9 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launchIntent)
-            speak("Accessing $appName for you now, Sir.")
+            speak("$appName open kar diya hai, Sir.")
         } else {
-            speak("I could not detect $appName installed on this terminal, Sir.")
+            speak("Phone mein $appName install nahi mila, Sir.")
         }
     }
 
@@ -491,7 +522,10 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             isTtsReady = true
-            tts?.language = Locale.UK
+            val langResult = tts?.setLanguage(Locale("hi", "IN"))
+            if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts?.setLanguage(Locale("en", "IN"))
+            }
             tts?.setPitch(0.95f)
             tts?.setSpeechRate(1.0f)
         }
