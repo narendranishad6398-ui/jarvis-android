@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#070913"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Header Title -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:letterSpacing="0.2"
+        android:text="J.A.R.V.I.S."
+        android:textColor="#00F2FE"
+        android:textSize="28sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="STARK INDUSTRIES PROTOCOL"
+        android:textColor="#7A889B"
+        android:textSize="12sp"
+        android:letterSpacing="0.1" />
+
+    <!-- Center Glowing Visual Stage -->
+    <FrameLayout
+        android:layout_width="220dp"
+        android:layout_height="220dp"
+        android:layout_marginTop="36dp"
+        android:layout_marginBottom="24dp">
+
+        <!-- Outer glowing ring simulation -->
+        <View
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_gravity="center"
+            android:background="@drawable/orb_glow" />
+
+        <Button
+            android:id="@+id/testMicBtn"
+            android:layout_width="140dp"
+            android:layout_height="140dp"
+            android:layout_gravity="center"
+            android:background="@drawable/orb_center"
+            android:text="⚡\nJARVIS"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+
+    <!-- Status indicator -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:text="○ MONITORING STANDBY"
+        android:textColor="#9E9E9E"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <!-- Card with Background Toggle Switches -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/card_bg"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Screen-Off Listening"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Listen for 'Jarvis' even when screen is locked"
+                    android:textColor="#8892B0"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <Switch
+                android:id="@+id/serviceSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="14dp"
+            android:background="#1E2A4A" />
+
+        <Button
+            android:id="@+id/batteryOptBtn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@drawable/btn_cyan"
+            android:text="🔋 Disable Battery Killer (Doze Mode)"
+            android:textColor="#070913"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="Important: Prevents Android from killing JARVIS when phone sleeps."
+            android:textColor="#6272A4"
+            android:textSize="11sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

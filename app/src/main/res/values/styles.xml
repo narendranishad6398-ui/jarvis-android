@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Jarvis" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:statusBarColor">#070913</item>
+        <item name="android:navigationBarColor">#070913</item>
+    </style>
+</resources>
