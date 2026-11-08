@@ -9,10 +9,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -40,6 +45,8 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private var isListening = false
     private var isTtsReady = false
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Jarvis Service initialized.")
@@ -62,7 +69,11 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Keep service alive (restart automatically if system kills it)
+        // Handle voice announcements from BatteryReceiver
+        val speakExtra = intent?.getStringExtra("SPEAK_TEXT")
+        if (!speakExtra.isNullOrEmpty()) {
+            speak(speakExtra)
+        }
         return START_STICKY
     }
 
@@ -104,62 +115,71 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun setupSpeechRecognizer() {
-        if (SpeechRecognizer.isRecognitionAvailable(this)) {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
-            speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    isListening = true
-                }
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {
-                    isListening = false
-                }
-                override fun onError(error: Int) {
-                    isListening = false
-                    // Auto-restart listening loop seamlessly on silence, timeout, or network pause
-                    restartListeningWithDelay()
-                }
-                override fun onResults(results: Bundle?) {
-                    isListening = false
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        val spokenText = matches[0].lowercase(Locale.ROOT)
-                        Log.d(TAG, "Recognized: $spokenText")
-                        processRecognizedText(spokenText)
-                    } else {
-                        restartListeningWithDelay()
+        mainHandler.post {
+            try {
+                if (SpeechRecognizer.isRecognitionAvailable(this)) {
+                    speechRecognizer?.destroy()
+                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+                    speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            isListening = true
+                        }
+                        override fun onBeginningOfSpeech() {}
+                        override fun onRmsChanged(rmsdB: Float) {}
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onEndOfSpeech() {
+                            isListening = false
+                        }
+                        override fun onError(error: Int) {
+                            isListening = false
+                            restartListeningWithDelay()
+                        }
+                        override fun onResults(results: Bundle?) {
+                            isListening = false
+                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            if (!matches.isNullOrEmpty()) {
+                                val spokenText = matches[0].lowercase(Locale.ROOT)
+                                Log.d(TAG, "Recognized: $spokenText")
+                                processRecognizedText(spokenText)
+                            } else {
+                                restartListeningWithDelay()
+                            }
+                        }
+                        override fun onPartialResults(partialResults: Bundle?) {}
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
+                    })
+
+                    recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     }
                 }
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-
-            recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            } catch (e: Exception) {
+                Log.e(TAG, "Setup recognizer error: ${e.message}")
             }
         }
     }
 
     private fun startListeningLoop() {
-        try {
-            if (!isListening && speechRecognizer != null && recognizerIntent != null) {
-                speechRecognizer?.startListening(recognizerIntent)
+        mainHandler.post {
+            try {
+                if (!isListening && speechRecognizer != null && recognizerIntent != null) {
+                    speechRecognizer?.startListening(recognizerIntent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Speech start error: ${e.message}")
+                restartListeningWithDelay()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Speech start error: ${e.message}")
-            restartListeningWithDelay()
         }
     }
 
     private fun restartListeningWithDelay() {
-        android.os.Handler(mainLooper).postDelayed({
+        mainHandler.postDelayed({
+            setupSpeechRecognizer()
             startListeningLoop()
-        }, 800)
+        }, 1000)
     }
 
     private fun processRecognizedText(text: String) {
@@ -170,7 +190,6 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             triggerWakeAlert()
             wakeUpScreenAndBringToFront()
 
-            // Remove wake word prefix to get command
             var command = text
             for (w in wakeWords) {
                 if (command.contains(w)) {
@@ -180,26 +199,24 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             if (command.isEmpty()) {
-                speak("At your service, Sir. What are your orders?")
+                speak("At your service, Sir. What can I do for you?")
             } else {
                 executeDirective(command)
             }
         } else {
-            // Keep listening for wake word
             restartListeningWithDelay()
         }
     }
 
     private fun triggerWakeAlert() {
-        // Haptic feedback
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vibratorManager.defaultVibrator.vibrate(VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE))
+                vibratorManager.defaultVibrator.vibrate(VibrationEffect.createOneShot(180, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
                 @Suppress("DEPRECATION")
                 val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                v.vibrate(150)
+                v.vibrate(180)
             }
         } catch (e: Exception) {}
     }
@@ -211,7 +228,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                 "JARVIS::WakeScreen"
             )
-            screenLock.acquire(3000)
+            screenLock.acquire(4000)
 
             val activityIntent = Intent(this, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
@@ -224,75 +241,218 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
     private fun executeDirective(cmd: String) {
         val command = cmd.lowercase(Locale.ROOT)
-        updateNotification("Processing: $command")
+        updateNotification("Directive: $command")
 
         when {
-            // 1. App Launching
-            command.contains("open whatsapp") -> {
-                launchPackage("com.whatsapp", "WhatsApp")
-            }
-            command.contains("open youtube") -> {
-                launchPackage("com.google.android.youtube", "YouTube")
-            }
-            command.contains("open instagram") -> {
-                launchPackage("com.instagram.android", "Instagram")
-            }
-            command.contains("open camera") -> {
-                val cameraIntent = Intent("android.media.action.IMAGE_CAPTURE").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // ==========================================
+            // 1. Phone Calling
+            // ==========================================
+            command.contains("call ") -> {
+                val rawTarget = command.substringAfter("call ").trim()
+                val digitsOnly = rawTarget.filter { it.isDigit() }
+                val dialIntent = if (digitsOnly.length >= 3) {
+                    Intent(Intent.ACTION_DIAL, Uri.parse("tel:$digitsOnly"))
+                } else {
+                    Intent(Intent.ACTION_DIAL)
                 }
-                startActivity(cameraIntent)
-                speak("Opening camera, Sir.")
-            }
-            command.contains("open spotify") -> {
-                launchPackage("com.spotify.music", "Spotify")
-            }
-            command.contains("open settings") -> {
-                val settingsIntent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivity(settingsIntent)
-                speak("Opening settings, Sir.")
+                dialIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(dialIntent)
+                speak("Initiating call directive for $rawTarget, Sir.")
             }
 
-            // 2. Flashlight Control
+            // ==========================================
+            // 2. WhatsApp Messaging
+            // ==========================================
+            command.contains("whatsapp") -> {
+                var message = "Hello from Jarvis"
+                if (command.contains("message") || command.contains("send")) {
+                    message = command.substringAfter("whatsapp").replace("message", "").replace("send", "").trim()
+                    if (message.isEmpty()) message = "Hello"
+                }
+                val sendIntent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("https://api.whatsapp.com/send?text=${Uri.encode(message)}")
+                    setPackage("com.whatsapp")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    startActivity(sendIntent)
+                    speak("Opening WhatsApp with your message, Sir.")
+                } catch (e: Exception) {
+                    launchPackage("com.whatsapp", "WhatsApp")
+                }
+            }
+
+            // ==========================================
+            // 3. Find My Phone / Siren Alert
+            // ==========================================
+            command.contains("where are you") || command.contains("find my phone") || command.contains("find phone") -> {
+                findMyPhoneAlarm()
+            }
+
+            // ==========================================
+            // 4. GPS Navigation & Google Maps
+            // ==========================================
+            command.contains("navigate to") || command.contains("directions to") -> {
+                val destination = command.substringAfter("to").trim()
+                val gmmIntentUri = Uri.parse("google.navigation:q=${Uri.encode(destination)}")
+                val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
+                    setPackage("com.google.android.apps.maps")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    startActivity(mapIntent)
+                    speak("Plotting course to $destination, Sir.")
+                } catch (e: Exception) {
+                    speak("Google Maps navigation unavailable, Sir.")
+                }
+            }
+
+            // ==========================================
+            // 5. Flashlight / Torch
+            // ==========================================
             command.contains("flashlight on") || command.contains("torch on") -> {
                 toggleTorch(true)
-                speak("Flashlight activated, Sir.")
+                speak("Illumination systems activated, Sir.")
             }
             command.contains("flashlight off") || command.contains("torch off") -> {
                 toggleTorch(false)
-                speak("Flashlight disabled, Sir.")
+                speak("Illumination disabled, Sir.")
             }
 
-            // 3. Time & Date
-            command.contains("time") -> {
-                val timeStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-                speak("It is currently $timeStr, Sir.")
-            }
-            command.contains("date") -> {
-                val dateStr = SimpleDateFormat("EEEE, MMMM dd", Locale.getDefault()).format(Date())
-                speak("Today is $dateStr, Sir.")
+            // ==========================================
+            // 6. Media & Music Playback
+            // ==========================================
+            command.startsWith("play ") || command.contains("on youtube") -> {
+                val query = command.replace("play", "").replace("on youtube", "").trim()
+                val ytIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(ytIntent)
+                speak("Searching and playing $query on YouTube, Sir.")
             }
 
-            // 4. Volume Control
+            // ==========================================
+            // 7. Universal App Launcher (Opens ANY App on Phone)
+            // ==========================================
+            command.startsWith("open ") || command.startsWith("launch ") || command.startsWith("kholo ") -> {
+                val appTarget = command.replace("open", "").replace("launch", "").replace("kholo", "").trim()
+                val opened = launchAppByName(appTarget)
+                if (!opened) {
+                    val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(appTarget)}")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(searchIntent)
+                    speak("I could not find $appTarget on your phone, Sir. Opening web results.")
+                }
+            }
+
+            // ==========================================
+            // 8. Volume Controls
+            // ==========================================
+            command.contains("max volume") -> {
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
+                speak("Audio output set to maximum, Sir.")
+            }
             command.contains("volume up") -> {
                 adjustVolume(AudioManager.ADJUST_RAISE)
-                speak("Volume increased, Sir.")
+                speak("Increasing master audio, Sir.")
             }
             command.contains("volume down") -> {
                 adjustVolume(AudioManager.ADJUST_LOWER)
-                speak("Volume lowered, Sir.")
+                speak("Decreasing master audio, Sir.")
+            }
+            command.contains("mute") -> {
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
+                speak("Master audio muted, Sir.")
             }
 
-            // 5. Default
+            // ==========================================
+            // 9. Time & Date Telemetry
+            // ==========================================
+            command.contains("time") -> {
+                val timeStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                speak("The current time is $timeStr, Sir.")
+            }
+            command.contains("date") -> {
+                val dateStr = SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.getDefault()).format(Date())
+                speak("Today's date is $dateStr, Sir.")
+            }
+
+            // ==========================================
+            // 10. AI Wit & Conversational Intelligence
+            // ==========================================
+            command.contains("how are you") -> {
+                speak("Operating at peak efficiency, Sir. Power grids nominal.")
+            }
+            command.contains("who are you") -> {
+                speak("I am JARVIS, your personal artificial intelligence assistant built by Stark Industries.")
+            }
+            command.contains("joke") -> {
+                speak("I asked my database for a witty joke, Sir, but all it returned was Error 404: Humor not found.")
+            }
             else -> {
-                speak("Command received for $command, Sir.")
+                val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(command)}")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(searchIntent)
+                speak("Here are the direct results for $command, Sir.")
             }
         }
 
-        // Resume listening loop after speech finishes
         restartListeningWithDelay()
+    }
+
+    private fun findMyPhoneAlarm() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, AudioManager.FLAG_SHOW_UI)
+
+            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)
+            ringtone?.play()
+
+            // Flash torch 3 times
+            toggleTorch(true)
+            mainHandler.postDelayed({ toggleTorch(false) }, 500)
+            mainHandler.postDelayed({ toggleTorch(true) }, 1000)
+            mainHandler.postDelayed({ toggleTorch(false) }, 1500)
+
+            speak("I am right here, Sir! All visual and acoustic beacons activated.")
+        } catch (e: Exception) {
+            speak("I am right here, Sir!")
+        }
+    }
+
+    private fun launchAppByName(query: String): Boolean {
+        try {
+            val pm = packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+            val cleanQuery = query.lowercase(Locale.ROOT).trim()
+
+            for (info in resolveInfos) {
+                val label = info.loadLabel(pm).toString().lowercase(Locale.ROOT)
+                if (label == cleanQuery || label.contains(cleanQuery) || cleanQuery.contains(label)) {
+                    val launchIntent = pm.getLaunchIntentForPackage(info.activityInfo.packageName)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(launchIntent)
+                        speak("Launching ${info.loadLabel(pm)}, Sir.")
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Launch app error: ${e.message}")
+        }
+        return false
     }
 
     private fun launchPackage(packageName: String, appName: String) {
@@ -301,9 +461,9 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launchIntent)
-            speak("Launching $appName now, Sir.")
+            speak("Accessing $appName for you now, Sir.")
         } else {
-            speak("I could not find $appName installed on this device, Sir.")
+            speak("I could not detect $appName installed on this terminal, Sir.")
         }
     }
 
@@ -331,7 +491,6 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             isTtsReady = true
-            // Prefer UK English for Jarvis voice
             tts?.language = Locale.UK
             tts?.setPitch(0.95f)
             tts?.setSpeechRate(1.0f)
