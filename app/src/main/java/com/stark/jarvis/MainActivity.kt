@@ -76,10 +76,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         testMicBtn.setOnClickListener {
-            // Test popup overlay immediately
             val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
-                putExtra("EXTRA_USER_QUERY", "JARVIS Test Trigger")
-                putExtra("EXTRA_ASSISTANT_REPLY", "Systems fully operational, Sir! Overlay working smoothly.")
+                putExtra("EXTRA_START_LISTENING", true)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(overlayIntent)
