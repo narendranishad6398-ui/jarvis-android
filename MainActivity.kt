@@ -126,6 +126,11 @@ class MainActivity : AppCompatActivity() {
         val hasCallPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
         val hasContacts = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
+        if (hasRecordAudio) {
+            serviceSwitch.isChecked = true
+            startJarvisBackgroundService()
+        }
+
         // Update Overlay Button
         if (hasOverlay) {
             overlayPermBtn.text = "✅ 1. 'Display Over Apps' Allowed"

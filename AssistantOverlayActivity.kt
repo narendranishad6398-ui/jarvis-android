@@ -275,6 +275,9 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
         autoDismissHandler.removeCallbacks(autoDismissRunnable)
         try { speechRecognizer?.stopListening() } catch (e: Exception) {}
         try { speechRecognizer?.destroy() } catch (e: Exception) {}
+        try {
+            sendBroadcast(Intent("com.stark.jarvis.OVERLAY_DISMISSED"))
+        } catch (e: Exception) {}
         finish()
         overridePendingTransition(0, android.R.anim.fade_out)
     }
@@ -284,5 +287,8 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
         autoDismissHandler.removeCallbacks(autoDismissRunnable)
         try { speechRecognizer?.destroy() } catch (e: Exception) {}
         try { tts?.stop(); tts?.shutdown() } catch (e: Exception) {}
+        try {
+            sendBroadcast(Intent("com.stark.jarvis.OVERLAY_DISMISSED"))
+        } catch (e: Exception) {}
     }
 }

@@ -34,21 +34,33 @@ object CommandExecutor {
         val command = rawCommand.lowercase(Locale.ROOT).trim()
 
         when {
-            // 1. Phone Calling
-            command.contains("call ") || command.contains("phone lagao") || command.contains("call lagao") || command.contains("phone karo") -> {
+            // 1. Direct Phone Calling (Handles all Hindi / English voice variations)
+            command.contains("call") || command.contains("phone") || command.contains("dial") || 
+            command.contains("कॉल") || command.contains("फोन") -> {
                 val target = command
                     .replace("call lagao", "")
                     .replace("phone lagao", "")
+                    .replace("call karo", "")
                     .replace("phone karo", "")
                     .replace("ko call", "")
                     .replace("ko phone", "")
                     .replace("call", "")
+                    .replace("phone", "")
+                    .replace("dial", "")
+                    .replace("lagao", "")
+                    .replace("karo", "")
+                    .replace("ko", "")
+                    .replace("par", "")
+                    .replace("कॉल लगाओ", "")
+                    .replace("फोन लगाओ", "")
+                    .replace("कॉल", "")
+                    .replace("फोन", "")
                     .trim()
                 makeDirectPhoneCall(context, target, callback)
             }
 
             // 2. WhatsApp Direct Messaging
-            command.contains("whatsapp") -> {
+            command.contains("whatsapp") || command.contains("व्हाट्सएप") -> {
                 sendWhatsAppToContact(context, command, callback)
             }
 
@@ -176,6 +188,17 @@ object CommandExecutor {
         val cleanQuery = query.trim().lowercase(Locale.ROOT)
         if (cleanQuery.isEmpty()) return null
 
+        val searchTerms = mutableListOf(cleanQuery)
+        if (cleanQuery.contains("papa") || cleanQuery.contains("pitaji") || cleanQuery.contains("dad")) {
+            searchTerms.addAll(listOf("papa", "dad", "father", "pitaji", "bauji", "daddy"))
+        } else if (cleanQuery.contains("mummy") || cleanQuery.contains("maa") || cleanQuery.contains("mom")) {
+            searchTerms.addAll(listOf("mummy", "mom", "mother", "maa", "mataji"))
+        } else if (cleanQuery.contains("bhai") || cleanQuery.contains("brother")) {
+            searchTerms.addAll(listOf("bhai", "brother", "bro"))
+        } else if (cleanQuery.contains("didi") || cleanQuery.contains("sister")) {
+            searchTerms.addAll(listOf("didi", "sister"))
+        }
+
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
@@ -190,9 +213,11 @@ object CommandExecutor {
                     val name = it.getString(nameIdx) ?: ""
                     val number = it.getString(numIdx) ?: ""
                     val lowerName = name.lowercase(Locale.ROOT)
-                    if (lowerName.contains(cleanQuery) || cleanQuery.contains(lowerName)) {
-                        val cleanNum = number.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-                        return Pair(name, cleanNum)
+                    for (term in searchTerms) {
+                        if (lowerName.contains(term) || term.contains(lowerName)) {
+                            val cleanNum = number.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+                            return Pair(name, cleanNum)
+                        }
                     }
                 }
             }
@@ -218,7 +243,7 @@ object CommandExecutor {
         }
 
         if (!finalNumber.isNullOrEmpty()) {
-            callback("Theek hai Sir, $contactName ko call mila raha hoon.", true)
+            callback("Theek hai Sir, $contactName ko direct call mila raha hoon.", true)
             val hasCallPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
             val callIntent = if (hasCallPermission) {
                 Intent(Intent.ACTION_CALL, Uri.parse("tel:$finalNumber"))
