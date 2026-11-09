@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlayRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#66000000">
+
+    <!-- Bottom Sheet Container (Floats up from bottom just like Google Assistant / Gemini) -->
+    <LinearLayout
+        android:id="@+id/cardContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="@drawable/bottom_overlay_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="24dp">
+
+        <!-- Top Drag Pill / Indicator -->
+        <View
+            android:layout_width="38dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="16dp"
+            android:background="#4A5568" />
+
+        <!-- User Spoken Text -->
+        <TextView
+            android:id="@+id/overlayUserText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="start"
+            android:text="Listening..."
+            android:textColor="#00F2FE"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+
+        <!-- JARVIS Assistant Answer Bubble -->
+        <TextView
+            android:id="@+id/overlayResponseText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Haan Sir, boliye?"
+            android:textColor="#E2E8F0"
+            android:textSize="15sp"
+            android:lineSpacingExtra="3dp" />
+
+        <!-- Google Assistant Glowing Acoustic Light Bar -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/assistant_light_bar" />
+
+        <!-- Quick Action Controls Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- 📷 Google Lens / Visual Camera Icon Button -->
+            <Button
+                android:id="@+id/lensBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:background="@drawable/card_bg"
+                android:paddingLeft="14dp"
+                android:paddingRight="14dp"
+                android:text="📷 Lens"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <!-- Spacer -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- Mic Tap Button -->
+            <Button
+                android:id="@+id/overlayMicBtn"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/orb_center"
+                android:text="🎙"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+
+            <!-- Spacer -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <!-- ❌ Close Button -->
+            <Button
+                android:id="@+id/closeBtn"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:background="@drawable/card_bg"
+                android:text="✕"
+                android:textColor="#A0AEC0"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</RelativeLayout>
