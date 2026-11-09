@@ -10,9 +10,11 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
+import android.widget.EditText
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -24,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var serviceSwitch: Switch
     private lateinit var batteryOptBtn: Button
+    private lateinit var geminiKeyBtn: Button
     private lateinit var testMicBtn: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,6 +42,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         serviceSwitch = findViewById(R.id.serviceSwitch)
         batteryOptBtn = findViewById(R.id.batteryOptBtn)
+        geminiKeyBtn = findViewById(R.id.geminiKeyBtn)
         testMicBtn = findViewById(R.id.testMicBtn)
 
         checkAndRequestPermissions()
@@ -59,14 +63,20 @@ class MainActivity : AppCompatActivity() {
             requestIgnoreBatteryOptimization()
         }
 
+        geminiKeyBtn.setOnClickListener {
+            showGeminiKeyDialog()
+        }
+
         testMicBtn.setOnClickListener {
-            Toast.makeText(this, "Say 'Hey Jarvis' or 'Jarvis' clearly", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Say: 'Hey Jarvis, Papa ko call lagao' or 'Torch jalao'", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun checkAndRequestPermissions() {
         val permissions = mutableListOf(
-            Manifest.permission.RECORD_AUDIO
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_CONTACTS
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -89,7 +99,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             startService(serviceIntent)
         }
-        Toast.makeText(this, "JARVIS Background Service Started", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "JARVIS Background Service Active", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopJarvisBackgroundService() {
@@ -110,5 +120,27 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Battery optimization already disabled for JARVIS!", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun showGeminiKeyDialog() {
+        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+        val currentKey = prefs.getString("GEMINI_API_KEY", "") ?: ""
+
+        val input = EditText(this).apply {
+            setText(currentKey)
+            hint = "Paste Google Gemini API Key"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Google Gemini AI Brain")
+            .setMessage("Paste your free Gemini API key to enable full AI conversation & reasoning:")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val newKey = input.text.toString().trim()
+                prefs.edit().putString("GEMINI_API_KEY", newKey).apply()
+                Toast.makeText(this, "Gemini AI Brain Connected!", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 }

@@ -11,7 +11,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="16dp"
         android:letterSpacing="0.2"
         android:text="J.A.R.V.I.S."
         android:textColor="#00F2FE"
@@ -21,30 +21,29 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="STARK INDUSTRIES PROTOCOL"
+        android:layout_marginTop="2dp"
+        android:text="STARK INDUSTRIES AI PROTOCOL"
         android:textColor="#7A889B"
-        android:textSize="12sp"
+        android:textSize="11sp"
         android:letterSpacing="0.1" />
 
     <!-- Center Glowing Visual Stage -->
     <FrameLayout
-        android:layout_width="220dp"
-        android:layout_height="220dp"
-        android:layout_marginTop="36dp"
-        android:layout_marginBottom="24dp">
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="16dp">
 
-        <!-- Outer glowing ring simulation -->
         <View
-            android:layout_width="200dp"
-            android:layout_height="200dp"
+            android:layout_width="190dp"
+            android:layout_height="190dp"
             android:layout_gravity="center"
             android:background="@drawable/orb_glow" />
 
         <Button
             android:id="@+id/testMicBtn"
-            android:layout_width="140dp"
-            android:layout_height="140dp"
+            android:layout_width="130dp"
+            android:layout_height="130dp"
             android:layout_gravity="center"
             android:background="@drawable/orb_center"
             android:text="⚡\nJARVIS"
@@ -58,7 +57,7 @@
         android:id="@+id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="24dp"
+        android:layout_marginBottom="20dp"
         android:text="○ MONITORING STANDBY"
         android:textColor="#9E9E9E"
         android:textSize="13sp"
@@ -70,7 +69,7 @@
         android:layout_height="wrap_content"
         android:background="@drawable/card_bg"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="18dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -89,14 +88,14 @@
                     android:layout_height="wrap_content"
                     android:text="Screen-Off Listening"
                     android:textColor="#FFFFFF"
-                    android:textSize="16sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:text="Listen for 'Jarvis' even when screen is locked"
+                    android:text="Listens 24/7 even when phone is locked"
                     android:textColor="#8892B0"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -110,25 +109,37 @@
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginVertical="14dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
             android:background="#1E2A4A" />
 
         <Button
             android:id="@+id/batteryOptBtn"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="44dp"
             android:background="@drawable/btn_cyan"
             android:text="🔋 Disable Battery Killer (Doze Mode)"
             android:textColor="#070913"
             android:textSize="13sp"
             android:textStyle="bold" />
 
+        <Button
+            android:id="@+id/geminiKeyBtn"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/card_bg"
+            android:text="🤖 Gemini AI Brain Settings"
+            android:textColor="#00F2FE"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="8dp"
             android:gravity="center"
-            android:text="Important: Prevents Android from killing JARVIS when phone sleeps."
+            android:text="Say: 'Papa ko call lagao', 'WhatsApp message bhejo', 'Torch jalao' or ask anything!"
             android:textColor="#6272A4"
             android:textSize="11sp" />
 

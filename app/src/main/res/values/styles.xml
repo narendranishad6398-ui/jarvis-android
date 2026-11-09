@@ -3,4 +3,15 @@
         <item name="android:statusBarColor">#070913</item>
         <item name="android:navigationBarColor">#070913</item>
     </style>
+
+    <!-- Google Assistant Style Floating Translucent Overlay Theme -->
+    <style name="Theme.JarvisOverlay" parent="Theme.AppCompat.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.40</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
 </resources>
