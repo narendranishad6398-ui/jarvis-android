@@ -269,6 +269,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showVoicePasswordDialog() {
+        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+        val currentPass = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim") ?: "khul ja sim sim"
+
+        val input = EditText(this).apply {
+            setText(currentPass)
+            hint = "Jaise: khul ja sim sim, open sesame, jarvis unlock"
+            setPadding(40, 30, 40, 30)
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(android.graphics.Color.GRAY)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("🔑 Custom Voice Unlock Password")
+            .setMessage("Apna secret voice password set karein. Lock screen par ye bolte hi turant screen unlock ho jayegi:")
+            .setView(input)
+            .setPositiveButton("Save Password") { _, _ ->
+                val newPass = input.text.toString().trim()
+                if (newPass.isNotEmpty()) {
+                    prefs.edit().putString("CUSTOM_UNLOCK_PHRASE", newPass).apply()
+                    Toast.makeText(this, "Voice Password Saved: '$newPass'", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun showGeminiKeyDialog() {
         val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
         val currentKey = prefs.getString("GEMINI_API_KEY", "") ?: ""
