@@ -10,10 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -21,11 +20,15 @@ import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import java.util.Locale
 
 class JarvisService : Service() {
 
@@ -33,26 +36,34 @@ class JarvisService : Service() {
     private val CHANNEL_ID = "JarvisForegroundChannel"
     private val NOTIFICATION_ID = 1001
 
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var recognizerIntent: Intent? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var audioManager: AudioManager? = null
     private var telephonyManager: TelephonyManager? = null
     private var phoneStateListener: PhoneStateListener? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    @Volatile private var isMonitoring = false
+    @Volatile private var isListening = false
     @Volatile private var isOverlayActive = false
     @Volatile private var isPhoneCallActive = false
 
-    private var monitorThread: Thread? = null
-    private var audioRecord: AudioRecord? = null
+    // Strict wake word list: Only triggers when user explicitly calls JARVIS
+    private val allowedWakeWords = listOf(
+        "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "suno jarvis",
+        "hey jarvish", "hello jarvish", "hi jarvish", "hii jarvish", "suno jarvish",
+        "jarvis", "jarvish", "जार्विस", "हे जार्विस", "हेलो जार्विस", "हाय जार्विस"
+    )
 
     private val overlayReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.stark.jarvis.OVERLAY_DISMISSED") {
-                Log.d(TAG, "Overlay dismissed broadcast received. Resuming continuous ear.")
+                Log.d(TAG, "Overlay dismissed. Resuming wake-word ear.")
                 mainHandler.postDelayed({
                     isOverlayActive = false
-                }, 600)
+                    restartListeningLoop(400)
+                }, 500)
             }
         }
     }
@@ -61,7 +72,6 @@ class JarvisService : Service() {
         super.onCreate()
         Log.d(TAG, "Jarvis Service initialized.")
 
-        // Acquire WakeLock so CPU never sleeps
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JARVIS::BackgroundAudioLock")
         try {
@@ -70,7 +80,9 @@ class JarvisService : Service() {
             Log.e(TAG, "WakeLock acquire error: ${e.message}")
         }
 
-        // Register dismiss receiver
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+
+        // Register overlay dismiss listener
         val filter = IntentFilter("com.stark.jarvis.OVERLAY_DISMISSED")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(overlayReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -80,14 +92,15 @@ class JarvisService : Service() {
 
         setupPhoneStateListener()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildForegroundNotification("Active: Voice detection running 24/7"))
+        startForeground(NOTIFICATION_ID, buildForegroundNotification("Active: Listening ONLY for 'Hey Jarvis' / 'Jarvis'"))
 
-        startContinuousEar()
+        setupSpeechRecognizer()
+        startListeningLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!isMonitoring) {
-            startContinuousEar()
+        if (!isListening && !isOverlayActive && !isPhoneCallActive) {
+            startListeningLoop()
         }
         return START_STICKY
     }
@@ -101,8 +114,10 @@ class JarvisService : Service() {
                     super.onCallStateChanged(state, phoneNumber)
                     if (state == TelephonyManager.CALL_STATE_RINGING || state == TelephonyManager.CALL_STATE_OFFHOOK) {
                         isPhoneCallActive = true
+                        stopListening()
                     } else if (state == TelephonyManager.CALL_STATE_IDLE) {
                         isPhoneCallActive = false
+                        restartListeningLoop(1000)
                     }
                 }
             }
@@ -117,10 +132,10 @@ class JarvisService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "JARVIS AI Protocol",
+                "JARVIS AI Assistant",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps JARVIS listening 24/7 without opening the app"
+                description = "Keeps JARVIS active while screen is locked or off"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -148,183 +163,120 @@ class JarvisService : Service() {
             .build()
     }
 
-    /**
-     * Continuous Hardware Ear
-     * Reads PCM audio continuously.
-     * Uses dynamic noise-floor tracking and RMS thresholding to detect human voice hands-free.
-     */
-    private fun startContinuousEar() {
-        if (isMonitoring) return
-
-        val hasAudioPerm = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        if (!hasAudioPerm) {
-            Log.e(TAG, "Audio permission not granted for continuous ear.")
-            return
-        }
-
-        isMonitoring = true
-        monitorThread = Thread({
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
-
-            val sampleRate = 16000
-            val channelConfig = AudioFormat.CHANNEL_IN_MONO
-            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-            val minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-            val bufferSize = Math.max(minBufSize, 2048)
-            val audioBuffer = ShortArray(bufferSize)
-
-            var ambientFloor = 600.0
-            var speechFrameCount = 0
-
-            while (isMonitoring) {
-                try {
-                    if (isOverlayActive || isPhoneCallActive) {
-                        // Release mic hardware so overlay or phone call has 100% clean mic access
-                        if (audioRecord != null) {
-                            try {
-                                audioRecord?.stop()
-                                audioRecord?.release()
-                            } catch (e: Exception) {}
-                            audioRecord = null
-                        }
-                        Thread.sleep(300)
-                        continue
-                    }
-
-                    // Initialize AudioRecord if needed
-                    if (audioRecord == null) {
-                        try {
-                            audioRecord = AudioRecord(
-                                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                                sampleRate,
-                                channelConfig,
-                                audioFormat,
-                                bufferSize * 2
-                            )
-                        } catch (e: Exception) {
-                            // Fallback to standard MIC
-                            audioRecord = AudioRecord(
-                                MediaRecorder.AudioSource.MIC,
-                                sampleRate,
-                                channelConfig,
-                                audioFormat,
-                                bufferSize * 2
-                            )
-                        }
-
-                        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                            audioRecord?.release()
-                            audioRecord = null
-                            Thread.sleep(1000)
-                            continue
-                        }
-
-                        audioRecord?.startRecording()
-                        Log.d(TAG, "Hardware continuous ear started successfully.")
-                    }
-
-                    val readShorts = audioRecord?.read(audioBuffer, 0, audioBuffer.size) ?: 0
-                    if (readShorts > 0) {
-                        var sum = 0.0
-                        for (i in 0 until readShorts) {
-                            sum += audioBuffer[i] * audioBuffer[i]
-                        }
-                        val rms = Math.sqrt(sum / readShorts)
-
-                        // Update dynamic ambient noise floor
-                        ambientFloor = (ambientFloor * 0.93) + (rms * 0.07)
-
-                        // Voice energy detection: sustained voice above background noise
-                        val speechThreshold = Math.max(2000.0, ambientFloor * 2.1)
-                        if (rms > speechThreshold) {
-                            speechFrameCount++
-                            // Require 2 consecutive frames (~200ms) of sustained human voice to avoid random clicks
-                            if (speechFrameCount >= 2) {
-                                speechFrameCount = 0
-                                Log.d(TAG, "Human voice detected! RMS: $rms, Ambient: $ambientFloor. Waking up JARVIS...")
-                                triggerWakeAssistant()
-                            }
-                        } else {
-                            if (speechFrameCount > 0) {
-                                speechFrameCount = 0
-                            }
-                        }
-                    } else {
-                        Thread.sleep(20)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Continuous ear error: ${e.message}")
-                    try { Thread.sleep(500) } catch (ignored: Exception) {}
-                }
-            }
-
-            try {
-                audioRecord?.stop()
-                audioRecord?.release()
-            } catch (e: Exception) {}
-            audioRecord = null
-            Log.d(TAG, "Continuous ear stopped.")
-        }, "JARVIS_Continuous_Ear_Thread")
-
-        monitorThread?.start()
-    }
-
-    private fun triggerWakeAssistant() {
+    private fun setupSpeechRecognizer() {
         mainHandler.post {
             try {
-                isOverlayActive = true
+                if (SpeechRecognizer.isRecognitionAvailable(this)) {
+                    speechRecognizer?.destroy()
+                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+                    speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            isListening = true
+                        }
+                        override fun onBeginningOfSpeech() {}
+                        override fun onRmsChanged(rmsdB: Float) {}
+                        override fun onBufferReceived(buffer: ByteArray?) {}
+                        override fun onEndOfSpeech() {
+                            isListening = false
+                        }
+                        override fun onError(error: Int) {
+                            isListening = false
+                            // On timeout or no speech, restart quietly without freezing
+                            restartListeningLoop(350)
+                        }
+                        override fun onResults(results: Bundle?) {
+                            isListening = false
+                            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            if (!matches.isNullOrEmpty()) {
+                                evaluateBackgroundSpeech(matches)
+                            } else {
+                                restartListeningLoop(300)
+                            }
+                        }
+                        override fun onPartialResults(partialResults: Bundle?) {}
+                        override fun onEvent(eventType: Int, params: Bundle?) {}
+                    })
 
-                // 1. Double Haptic feedback
-                triggerVibrateFeedback()
-
-                // 2. Wake screen
-                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                val screenLock = powerManager.newWakeLock(
-                    PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                    "JARVIS::ScreenWake"
-                )
-                screenLock.acquire(4000)
-
-                // 3. Launch AssistantOverlayActivity
-                val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
-                    putExtra("EXTRA_START_LISTENING", true)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                }
-                startActivity(overlayIntent)
-
-                // 4. Also fire High-Priority FullScreenIntent for locked screens
-                val pendingIntent = PendingIntent.getActivity(
-                    this, 101, overlayIntent,
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-                val wakeNotification = NotificationCompat.Builder(this, CHANNEL_ID)
-                    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                    .setContentTitle("JARVIS Protocol")
-                    .setContentText("Listening to your voice command...")
-                    .setPriority(NotificationCompat.PRIORITY_MAX)
-                    .setCategory(NotificationCompat.CATEGORY_ALARM)
-                    .setFullScreenIntent(pendingIntent, true)
-                    .setAutoCancel(true)
-                    .build()
-                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                manager.notify(2002, wakeNotification)
-                mainHandler.postDelayed({ manager.cancel(2002) }, 4000)
-
-                // Safeguard: auto-reset isOverlayActive after 12s in case activity closed abruptly
-                mainHandler.postDelayed({
-                    if (isOverlayActive) {
-                        isOverlayActive = false
+                    recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("hi-IN", "en-IN", "en-US", "hi"))
+                        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     }
-                }, 12000)
-
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Trigger wake assistant error: ${e.message}")
-                isOverlayActive = false
+                Log.e(TAG, "Setup recognizer error: ${e.message}")
             }
         }
     }
 
-    private fun triggerVibrateFeedback() {
+    private fun startListeningLoop() {
+        mainHandler.post {
+            try {
+                if (isOverlayActive || isPhoneCallActive) return@post
+
+                val hasAudioPerm = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                if (!hasAudioPerm) return@post
+
+                if (speechRecognizer == null) {
+                    setupSpeechRecognizer()
+                }
+
+                if (!isListening && speechRecognizer != null && recognizerIntent != null) {
+                    speechRecognizer?.startListening(recognizerIntent)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Start listening error: ${e.message}")
+                restartListeningLoop(600)
+            }
+        }
+    }
+
+    private fun stopListening() {
+        mainHandler.post {
+            try {
+                isListening = false
+                speechRecognizer?.cancel()
+            } catch (e: Exception) {}
+        }
+    }
+
+    private fun restartListeningLoop(delayMs: Long = 300) {
+        mainHandler.postDelayed({
+            if (!isOverlayActive && !isPhoneCallActive) {
+                startListeningLoop()
+            }
+        }, delayMs)
+    }
+
+    /**
+     * Strict Wake-Word Verification
+     * Prevents random voices, YouTube videos, other apps, or room chatter from triggering JARVIS.
+     * ONLY awakens if user specifically said "Jarvis", "Hey Jarvis", "Hello Jarvis", "Hi Jarvis", "Jarvish", etc.
+     */
+    private fun evaluateBackgroundSpeech(matches: List<String>) {
+        for (candidate in matches) {
+            val lower = candidate.lowercase(Locale.ROOT).trim()
+
+            for (wakeWord in allowedWakeWords) {
+                if (lower.contains(wakeWord)) {
+                    Log.d(TAG, "Valid Wake Word detected: '$wakeWord' in '$candidate'. Triggering JARVIS!")
+
+                    // Extract attached directive (e.g. "hey jarvis papa ko call lagao" -> "papa ko call lagao")
+                    val command = lower.substringAfter(wakeWord).trim()
+                    triggerWakeAlert()
+                    wakeUpAssistantOverlay(command)
+                    return
+                }
+            }
+        }
+
+        // No wake word matched -> Completely IGNORE other audio and continue listening quietly!
+        restartListeningLoop(250)
+    }
+
+    private fun triggerWakeAlert() {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -343,12 +295,69 @@ class JarvisService : Service() {
         } catch (e: Exception) {}
     }
 
+    private fun wakeUpAssistantOverlay(initialCommand: String) {
+        try {
+            isOverlayActive = true
+            stopListening()
+
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val screenLock = powerManager.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "JARVIS::WakeScreen"
+            )
+            screenLock.acquire(4000)
+
+            val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
+                if (initialCommand.isNotEmpty()) {
+                    putExtra("EXTRA_USER_QUERY", initialCommand)
+                    putExtra("EXTRA_START_LISTENING", false)
+                } else {
+                    putExtra("EXTRA_START_LISTENING", true)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            startActivity(overlayIntent)
+
+            // High-priority full-screen intent for locked screen
+            val pendingIntent = PendingIntent.getActivity(
+                this, 101, overlayIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val wakeNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("JARVIS Protocol")
+                .setContentText(if (initialCommand.isNotEmpty()) initialCommand else "Listening, Sir...")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(pendingIntent, true)
+                .setAutoCancel(true)
+                .build()
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(2002, wakeNotification)
+            mainHandler.postDelayed({ manager.cancel(2002) }, 4000)
+
+            // Safeguard reset after 12s in case overlay closed without broadcast
+            mainHandler.postDelayed({
+                if (isOverlayActive) {
+                    isOverlayActive = false
+                    restartListeningLoop(500)
+                }
+            }, 12000)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Screen wake error: ${e.message}")
+            isOverlayActive = false
+            restartListeningLoop(600)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        isMonitoring = false
+        isListening = false
         isOverlayActive = false
         try { telephonyManager?.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE) } catch (e: Exception) {}
         try { unregisterReceiver(overlayReceiver) } catch (e: Exception) {}
+        try { speechRecognizer?.destroy() } catch (e: Exception) {}
         try {
             wakeLock?.let {
                 if (it.isHeld) it.release()

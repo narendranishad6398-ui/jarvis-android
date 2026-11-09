@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">JARVIS</string>
+    <string name="accessibility_service_description">JARVIS Universal Phone Controller - Allows hands-free gestures, app control, screen lock/unlock, and navigation via voice directives.</string>
+</resources>

@@ -29,14 +29,18 @@ jobs:
         mkdir -p app/src/main/java/com/stark/jarvis
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/xml
         if [ -f "AndroidManifest.xml" ]; then mv -f AndroidManifest.xml app/src/main/; fi
         if [ -f "activity_assistant_overlay.xml" ]; then mv -f activity_assistant_overlay.xml app/src/main/res/layout/; fi
         if [ -f "activity_main.xml" ]; then mv -f activity_main.xml app/src/main/res/layout/; fi
         if [ -f "styles.xml" ]; then mv -f styles.xml app/src/main/res/values/; fi
+        if [ -f "strings.xml" ]; then mv -f strings.xml app/src/main/res/values/; fi
+        if [ -f "accessibility_service_config.xml" ]; then mv -f accessibility_service_config.xml app/src/main/res/xml/; fi
         if [ -f "CommandExecutor.kt" ]; then mv -f CommandExecutor.kt app/src/main/java/com/stark/jarvis/; fi
         if [ -f "AssistantOverlayActivity.kt" ]; then mv -f AssistantOverlayActivity.kt app/src/main/java/com/stark/jarvis/; fi
         if [ -f "JarvisService.kt" ]; then mv -f JarvisService.kt app/src/main/java/com/stark/jarvis/; fi
         if [ -f "MainActivity.kt" ]; then mv -f MainActivity.kt app/src/main/java/com/stark/jarvis/; fi
+        if [ -f "JarvisAccessibilityService.kt" ]; then mv -f JarvisAccessibilityService.kt app/src/main/java/com/stark/jarvis/; fi
 
     - name: Build APK
       run: |
