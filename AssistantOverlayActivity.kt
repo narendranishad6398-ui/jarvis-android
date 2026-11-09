@@ -89,7 +89,7 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
             }
 
             lensBtn.setOnClickListener {
-                CommandExecutor.launchGoogleLensOrCamera(this) { reply, _ ->
+                CommandExecutor.launchGoogleLensOrCamera(this) { reply: String, _: Boolean ->
                     speakAndDismiss(reply, true)
                 }
             }

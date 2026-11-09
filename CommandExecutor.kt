@@ -1568,6 +1568,26 @@ object CommandExecutor {
         callback("Boss, '$rawTarget' app phone mein nahi mila.", false)
     }
 
+    fun launchGoogleLensOrCamera(context: Context, callback: (String, Boolean) -> Unit) {
+        try {
+            val lensIntent = Intent(Intent.ACTION_VIEW, Uri.parse("googleapp://lens")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(lensIntent)
+            callback("Google Lens Live Vision open kar diya hai, Boss.", true)
+        } catch (e: Exception) {
+            val cameraIntent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(cameraIntent)
+                callback("Camera open kar diya hai Boss.", true)
+            } catch (ex: Exception) {
+                callback("Camera open nahi ho saka Boss.", false)
+            }
+        }
+    }
+
     private fun queryAIBrain(context: Context, prompt: String, callback: (String, Boolean) -> Unit) {
         val persona = resolvePersonaOrConversation(prompt)
         if (persona != null) {
