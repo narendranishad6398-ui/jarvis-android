@@ -2,6 +2,7 @@ package com.stark.jarvis
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityService.GestureResultCallback
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.Context
@@ -140,7 +141,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             val stroke = GestureDescription.StrokeDescription(swipePath, 0, 300)
             gestureBuilder.addStroke(stroke)
 
-            dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
+            dispatchGesture(gestureBuilder.build(), object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     Log.d(TAG, "Unlock swipe gesture succeeded.")
                     callback?.invoke(true)
@@ -176,7 +177,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 250))
             .build()
 
-        dispatchGesture(gesture, object : GestureResultCallback() {
+        dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 callback?.invoke(true)
             }
@@ -205,7 +206,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 250))
             .build()
 
-        dispatchGesture(gesture, object : GestureResultCallback() {
+        dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 callback?.invoke(true)
             }
@@ -724,35 +725,39 @@ object CommandExecutor {
     }
 
     private fun handleVolumeRingerControls(context: Context, cmd: String, callback: (String, Boolean) -> Unit) {
-        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        when {
-            cmd.contains("silent") || cmd.contains("mute") || cmd.contains("aawaz band") -> {
-                am.ringerMode = AudioManager.RINGER_MODE_SILENT
-                am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
-                callback("Phone silent kar diya gaya hai, Sir.", false)
+        try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            when {
+                cmd.contains("silent") || cmd.contains("mute") || cmd.contains("aawaz band") -> {
+                    try { am.ringerMode = AudioManager.RINGER_MODE_SILENT } catch (e: Exception) {}
+                    try { am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
+                    callback("Phone silent kar diya gaya hai, Sir.", false)
+                }
+                cmd.contains("vibrate") || cmd.contains("vibration") -> {
+                    try { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE } catch (e: Exception) {}
+                    callback("Phone vibrate mode par set kar diya hai, Sir.", false)
+                }
+                cmd.contains("full") || cmd.contains("max") || cmd.contains("puri aawaz") -> {
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                    try { am.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
+                    try { am.ringerMode = AudioManager.RINGER_MODE_NORMAL } catch (e: Exception) {}
+                    callback("Volume poori tarah badha di hai, Sir.", false)
+                }
+                cmd.contains("badhao") || cmd.contains("tez") || cmd.contains("up") -> {
+                    try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
+                    callback("Aawaz badha di hai, Sir.", false)
+                }
+                cmd.contains("kam") || cmd.contains("dheeme") || cmd.contains("down") -> {
+                    try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
+                    callback("Aawaz kam kar di hai, Sir.", false)
+                }
+                else -> {
+                    try { am.ringerMode = AudioManager.RINGER_MODE_NORMAL } catch (e: Exception) {}
+                    callback("Sound normal mode par set hai, Sir.", false)
+                }
             }
-            cmd.contains("vibrate") || cmd.contains("vibration") -> {
-                am.ringerMode = AudioManager.RINGER_MODE_VIBRATE
-                callback("Phone vibrate mode par set kar diya hai, Sir.", false)
-            }
-            cmd.contains("full") || cmd.contains("max") || cmd.contains("puri aawaz") -> {
-                val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                am.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
-                am.ringerMode = AudioManager.RINGER_MODE_NORMAL
-                callback("Volume poori tarah badha di hai, Sir.", false)
-            }
-            cmd.contains("badhao") || cmd.contains("tez") || cmd.contains("up") -> {
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
-                callback("Aawaz badha di hai, Sir.", false)
-            }
-            cmd.contains("kam") || cmd.contains("dheeme") || cmd.contains("down") -> {
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
-                callback("Aawaz kam kar di hai, Sir.", false)
-            }
-            else -> {
-                am.ringerMode = AudioManager.RINGER_MODE_NORMAL
-                callback("Sound normal mode par set hai, Sir.", false)
-            }
+        } catch (e: Exception) {
+            callback("Volume control me samasya aayi, Sir.", false)
         }
     }
 
