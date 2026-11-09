@@ -215,7 +215,11 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
         val wakeWords = listOf(
             "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "suno jarvis",
             "hey jarvish", "hello jarvish", "hi jarvish", "hii jarvish",
-            "jarvis", "jarvish", "\u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947\u0932\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
+            "hey stark", "hello stark", "hi stark", "suno stark",
+            "hey computer", "hello computer", "suno computer",
+            "hey assistant", "hello assistant", "suno assistant",
+            "jarvis", "jarvish", "stark", "computer", "assistant",
+            "\u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947\u0932\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
         )
         for (w in wakeWords) {
             if (clean.contains(w)) {

@@ -66,6 +66,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Custom Voice Unlock Password Setup
+        val voicePassId = resources.getIdentifier("voicePasswordBtn", "id", packageName)
+        if (voicePassId != 0) {
+            findViewById<Button>(voicePassId)?.setOnClickListener {
+                showVoicePasswordDialog()
+            }
+        }
+
         grantAllBtn.setOnClickListener {
             handleGrantAllPermissions()
         }

@@ -286,6 +286,40 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val isMediaPlaying = audioManager.isMusicActive
 
+        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+        val customUnlockPhrase = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")?.trim()?.lowercase(Locale.ROOT) ?: ""
+
+        // Check for Custom Voice Unlock Password directly:
+        for (candidate in matches) {
+            val lower = candidate.lowercase(Locale.ROOT).trim()
+            if ((customUnlockPhrase.isNotEmpty() && lower.contains(customUnlockPhrase)) || 
+                lower.contains("khul ja sim sim") || lower.contains("open sesame")) {
+                Log.d(TAG, "Custom Voice Unlock Password matched: '$lower'")
+                triggerWakeAlert()
+                try {
+                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    @Suppress("DEPRECATION")
+                    val wl = pm.newWakeLock(
+                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                        "com.stark.jarvis:UnlockWakeLock"
+                    )
+                    wl.acquire(4000L)
+                } catch (e: Exception) {}
+
+                mainHandler.postDelayed({
+                    val acc = JarvisAccessibilityService.instance
+                    if (acc != null) {
+                        acc.unlockWithSwipeGesture { success ->
+                            speakTextOutLoud(if (success) "Voice password verified, Boss! Screen unlock kar di hai." else "Voice password verified Boss.")
+                        }
+                    } else {
+                        speakTextOutLoud("Voice password verified Boss. Accessibility enable karein swipe unlock ke liye.")
+                    }
+                }, 400)
+                return
+            }
+        }
+
         for (candidate in matches) {
             val lower = candidate.lowercase(Locale.ROOT).trim()
             val words = lower.split("\\s+".toRegex())
@@ -294,7 +328,10 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             if (isMediaPlaying) {
                 val strictPrefixes = listOf(
                     "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "jarvis", "jarvish", "suno jarvis",
-                    "\u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0938\u0941\u092e\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
+                    "hey stark", "hello stark", "hi stark", "stark",
+                    "hey computer", "computer", "hey assistant", "assistant",
+                    "hey jarvi", "jervis",
+                    "\u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0938\u0941\u0928\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
                 )
                 for (p in strictPrefixes) {
                     if (lower.startsWith(p)) {
@@ -311,6 +348,9 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             val multiWordWake = listOf(
                 "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "suno jarvis",
                 "hey jarvish", "hello jarvish", "hi jarvish", "hii jarvish", "suno jarvish",
+                "hey stark", "hello stark", "hi stark", "suno stark",
+                "hey computer", "hello computer", "suno computer",
+                "hey assistant", "hello assistant", "suno assistant",
                 "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947\u0932\u094b \u091c\u093e\u0930\u0935\u093f\u0938", "\u0938\u0941\u0928\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
             )
 
@@ -323,9 +363,13 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             if (detectedWake == null) {
-                if (words.contains("jarvis")) detectedWake = "jarvis"
-                else if (words.contains("jarvish")) detectedWake = "jarvish"
-                else if (words.contains("\u091c\u093e\u0930\u0935\u093f\u0938")) detectedWake = "\u091c\u093e\u0930\u0935\u093f\u0938"
+                val singleNames = listOf("jarvis", "jarvish", "stark", "computer", "assistant", "jarvi", "jervis", "\u091c\u093e\u0930\u0935\u093f\u0938")
+                for (sn in singleNames) {
+                    if (words.contains(sn)) {
+                        detectedWake = sn
+                        break
+                    }
+                }
             }
 
             if (detectedWake != null) {

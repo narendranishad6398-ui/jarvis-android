@@ -391,6 +391,41 @@ class JarvisAccessibilityService : AccessibilityService() {
         return false
     }
 
+    fun clickAnswerCallButton(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val answerKeywords = listOf("answer", "accept", "receive", "incoming call", "pickup", "swipe up to answer")
+        for (kw in answerKeywords) {
+            val nodes = root.findAccessibilityNodeInfosByText(kw)
+            if (!nodes.isNullOrEmpty()) {
+                for (n in nodes) {
+                    if (performClickRecursive(n)) return true
+                }
+            }
+        }
+        return false
+    }
+
+    fun clickMapAction(action: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val keywords = when (action) {
+            "start" -> listOf("start", "\u0936\u0941\u0930\u0942 \u0915\u0930\u0947\u0902", "preview", "directions", "go")
+            "stop" -> listOf("exit", "stop", "close", "end", "x")
+            "mute" -> listOf("mute", "unmute", "sound", "speaker")
+            "recenter" -> listOf("recenter", "center")
+            "steps" -> listOf("steps", "list", "route options")
+            else -> listOf(action)
+        }
+        for (kw in keywords) {
+            val nodes = root.findAccessibilityNodeInfosByText(kw)
+            if (!nodes.isNullOrEmpty()) {
+                for (n in nodes) {
+                    if (performClickRecursive(n)) return true
+                }
+            }
+        }
+        return false
+    }
+
     fun clickEndCallButton(): Boolean {
         val root = rootInActiveWindow ?: return false
         val endCallKeywords = listOf("end call", "disconnect", "decline", "cut call", "hang up", "call end", "end")
@@ -430,7 +465,24 @@ object CommandExecutor {
                 makeDirectPhoneCall(context, target, callback)
             }
 
-            // 2. Disconnect / End Active Call
+            // 2. Answer / Receive Incoming Call
+            isAnswerCallCommand(command) -> {
+                val acc = JarvisAccessibilityService.instance
+                var answered = acc?.clickAnswerCallButton() ?: false
+                if (!answered && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    try {
+                        val tm = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED) {
+                            @Suppress("DEPRECATION")
+                            tm?.acceptRingingCall()
+                            answered = true
+                        }
+                    } catch (e: Exception) {}
+                }
+                callback(if (answered) "Ji Boss, call receive kar li hai." else "Call answer karne ka prayas kiya Boss.", true)
+            }
+
+            // 3. Disconnect / End Active Call
             command.contains("call kato") || command.contains("call disconnect") || 
             command.contains("phone kato") || command.contains("call end") || command.contains("disconnect call") ||
             command.contains("\u0915\u093e\u091f\u094b") -> {
@@ -528,9 +580,8 @@ object CommandExecutor {
                 }
             }
 
-            // 11. Screen Unlock (Swipe Gesture Automation)
-            command.contains("screen unlock") || command.contains("phone unlock") || 
-            command.contains("screen kholo") || command.contains("phone kholo") || command.contains("\u0932\u0949\u0915 \u0916\u094b\u0932\u094b") -> {
+            // 11. Screen Unlock (Custom Voice Password & Gesture)
+            isUnlockCommand(command, context) -> {
                 val acc = JarvisAccessibilityService.instance
                 if (acc != null) {
                     acc.unlockWithSwipeGesture { success ->
@@ -728,7 +779,52 @@ object CommandExecutor {
                 callback("Siren bajna shuru ho gaya hai Boss. Phone milne par screen tap karein.", true)
             }
 
-            // 24. Launch Apps by Voice
+            // 23. YouTube Direct Play (Songs, Videos, Comedy)
+            isYouTubePlayCommand(command) -> {
+                handleYouTubePlay(context, command, callback)
+            }
+
+            // 24. Battery Status & Telemetry
+            isBatteryCommand(command) -> {
+                handleBatteryCheck(context, callback)
+            }
+
+            // 25. Web Search on Google
+            isWebSearchCommand(command) -> {
+                handleWebSearch(context, command, callback)
+            }
+
+            // In-Map Navigation Controls (Start, Stop, Steps, Mute in Google Maps)
+            command.contains("start navigation") || command.contains("rasta shuru") || command.contains("navigation shuru") ||
+            (command.contains("start") && (command.contains("navigation") || command.contains("map") || command.contains("rasta"))) -> {
+                mainHandler.postDelayed({
+                    val acc = JarvisAccessibilityService.instance
+                    val clicked = acc?.clickMapAction("start") ?: false
+                    callback(if (clicked) "Ji Boss, navigation shuru kar di hai." else "Maps par start button click kiya Boss.", true)
+                }, 300)
+            }
+            command.contains("stop navigation") || command.contains("exit navigation") || 
+            command.contains("rasta band karo") || command.contains("navigation band karo") -> {
+                mainHandler.postDelayed({
+                    val acc = JarvisAccessibilityService.instance
+                    val clicked = acc?.clickMapAction("stop") ?: false
+                    callback(if (clicked) "Theek hai Boss, navigation band kar di hai." else "Navigation close karne ka prayas kiya Boss.", true)
+                }, 300)
+            }
+            command.contains("map mute") || command.contains("map aawaz band") || command.contains("navigation mute") -> {
+                mainHandler.postDelayed({
+                    val acc = JarvisAccessibilityService.instance
+                    val clicked = acc?.clickMapAction("mute") ?: false
+                    callback(if (clicked) "Theek hai Boss, maps voice toggle kar diya hai." else "Maps mute click kiya Boss.", true)
+                }, 300)
+            }
+
+            // 26. Google Maps Navigation & Live Route to ANY Location
+            isMapsOrNavigationCommand(command) -> {
+                handleMapsNavigation(context, command, callback)
+            }
+
+            // 25. Launch Apps by Voice
             command.startsWith("open ") || command.startsWith("kholo ") || command.contains("chalao") -> {
                 val appTarget = command.replace("open ", "").replace("kholo ", "").replace("chalao ", "").trim()
                 launchAppByName(context, appTarget, callback)
@@ -739,6 +835,113 @@ object CommandExecutor {
                 queryAIBrain(context, command, callback)
             }
         }
+    }
+
+    private fun isUnlockCommand(cmd: String, context: Context): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        val prefs = context.getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+        val customPass = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")?.trim()?.lowercase(Locale.ROOT) ?: ""
+
+        if (customPass.isNotEmpty() && lower.contains(customPass)) {
+            return true
+        }
+
+        return lower.contains("screen unlock") || lower.contains("phone unlock") || 
+               lower.contains("screen kholo") || lower.contains("phone kholo") || 
+               lower.contains("khul ja sim sim") || lower.contains("open sesame") ||
+               lower.contains("\u0932\u0949\u0915 \u0916\u094b\u0932\u094b")
+    }
+
+    private fun isAnswerCallCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return lower.contains("call uthao") || lower.contains("phone uthao") || 
+               lower.contains("call receive") || lower.contains("answer call") ||
+               lower.contains("receive call") || lower.contains("call attend") ||
+               lower.contains("\u0909\u0920\u093e\u0913")
+    }
+
+    private fun isYouTubePlayCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return (lower.contains("youtube") || lower.contains("gana") || lower.contains("video") || lower.contains("song")) &&
+               (lower.contains("chalao") || lower.contains("bajao") || lower.contains("play") || lower.contains("dikhao") || lower.contains("sunao"))
+    }
+
+    private fun handleYouTubePlay(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val query = command
+            .replace("youtube par", "")
+            .replace("youtube me", "")
+            .replace("youtube pe", "")
+            .replace("youtube", "")
+            .replace("chalao", "")
+            .replace("bajao", "")
+            .replace("play karo", "")
+            .replace("play", "")
+            .replace("gana", "")
+            .replace("song", "")
+            .replace("video", "")
+            .replace("dikhao", "")
+            .replace("sunao", "")
+            .trim()
+
+        val searchQuery = if (query.isNotEmpty()) query else "top hit songs"
+        val intent = Intent(Intent.ACTION_SEARCH).apply {
+            setPackage("com.google.android.youtube")
+            putExtra("query", searchQuery)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        try {
+            context.startActivity(intent)
+            callback("Ji Boss, YouTube par '$searchQuery' play kar raha hoon.", true)
+        } catch (e: Exception) {
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + URLEncoder.encode(searchQuery, "UTF-8"))).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(webIntent)
+            callback("Ji Boss, YouTube par '$searchQuery' open kar diya hai.", true)
+        }
+    }
+
+    private fun isBatteryCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return lower.contains("battery") || lower.contains("charging") || lower.contains("power level") ||
+               lower.contains("\u092c\u0948\u091f\u0930\u0940")
+    }
+
+    private fun handleBatteryCheck(context: Context, callback: (String, Boolean) -> Unit) {
+        try {
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            val isCharging = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val status = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS)
+                status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+            } else false
+            val statusText = if (isCharging) "charger se connect hai" else "internal power reserves par chal raha hai"
+            callback("Boss, current battery level $level% hai aur device $statusText.", false)
+        } catch (e: Exception) {
+            callback("Boss, battery status check nahi ho saka.", false)
+        }
+    }
+
+    private fun isWebSearchCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return lower.startsWith("search ") || lower.startsWith("google par search") || 
+               lower.contains("google search") || lower.contains("browse")
+    }
+
+    private fun handleWebSearch(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val query = command
+            .replace("google par search karo", "")
+            .replace("google par search", "")
+            .replace("google search karo", "")
+            .replace("google search", "")
+            .replace("search karo", "")
+            .replace("search", "")
+            .trim()
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + URLEncoder.encode(query, "UTF-8"))).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
+        callback("Theek hai Boss, Google par '$query' search kar diya hai.", true)
     }
 
     private fun isCallCommand(cmd: String): Boolean {
@@ -1110,6 +1313,69 @@ object CommandExecutor {
         } catch (e: Exception) {
             Log.e(TAG, "Torch toggle error: ${e.message}")
             false
+        }
+    }
+
+    private fun isMapsOrNavigationCommand(cmd: String): Boolean {
+        return cmd.contains("rasta dikhao") || cmd.contains("rasta batao") || 
+               cmd.contains("navigation") || cmd.contains("navigate") || 
+               cmd.contains("location dikhao") || cmd.contains("location kholo") ||
+               cmd.contains("maps me") || cmd.contains("map me") || cmd.contains("map par") ||
+               cmd.contains("directions") || cmd.contains("ka rasta") ||
+               cmd.contains("\u0930\u093e\u0938\u094d\u0924\u093e") || cmd.contains("\u0928\u0915\u094d\u0936\u093e")
+    }
+
+    private fun handleMapsNavigation(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        var destination = command
+            .replace("google maps me", "")
+            .replace("google map me", "")
+            .replace("maps me", "")
+            .replace("map me", "")
+            .replace("map par", "")
+            .replace("navigate to", "")
+            .replace("navigation to", "")
+            .replace("navigate", "")
+            .replace("navigation", "")
+            .replace("rasta dikhao", "")
+            .replace("rasta batao", "")
+            .replace("location dikhao", "")
+            .replace("location kholo", "")
+            .replace("directions to", "")
+            .replace("direction", "")
+            .replace("ka rasta", "")
+            .replace("ki location", "")
+            .replace("kholo", "")
+            .replace("dikhao", "")
+            .replace("batao", "")
+            .replace("jaana hai", "")
+            .replace("le chalo", "")
+            .replace("\u0930\u093e\u0938\u094d\u0924\u093e \u0926\u093f\u0916\u093e\u0913", "")
+            .replace("\u0930\u093e\u0938\u094d\u0924\u093e", "")
+            .trim()
+
+        if (destination.isEmpty()) {
+            destination = "nearby petrol pump"
+        }
+
+        try {
+            val gmmIntentUri = Uri.parse("google.navigation:q=" + Uri.encode(destination))
+            val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
+                setPackage("com.google.android.apps.maps")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(mapIntent)
+            callback("Theek hai Boss, $destination ka live rasta Google Maps mein open kar diya hai.", true)
+        } catch (e: Exception) {
+            try {
+                val geoUri = Uri.parse("geo:0,0?q=" + Uri.encode(destination))
+                val geoIntent = Intent(Intent.ACTION_VIEW, geoUri).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(geoIntent)
+                callback("Theek hai Boss, $destination ki location open kar di hai.", true)
+            } catch (ex: Exception) {
+                callback("Maps open nahi ho saka Boss.", false)
+            }
         }
     }
 
