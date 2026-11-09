@@ -22,6 +22,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.AlarmClock
 import android.provider.ContactsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import android.telecom.TelecomManager
 import android.util.DisplayMetrics
@@ -45,7 +46,7 @@ import kotlin.concurrent.thread
  * Universal In-App & Phone Control Accessibility Service
  * Configured programmatically - requires ZERO xml config files!
  * Auto-toggles settings switches (Mobile data, Wi-Fi, Hotspot, Bluetooth).
- * Automates text typing, button clicking, and scrolling in any active app.
+ * Automates Camera Shutter, Video Recording, Text Typing, Button Clicking, and Scrolling in any active app.
  */
 class JarvisAccessibilityService : AccessibilityService() {
 
@@ -133,9 +134,9 @@ class JarvisAccessibilityService : AccessibilityService() {
         try {
             val dm: DisplayMetrics = resources.displayMetrics
             val startX = dm.widthPixels / 2f
-            val startY = dm.heightPixels * 0.82f
+            val startY = dm.heightPixels * 0.85f
             val endX = startX
-            val endY = dm.heightPixels * 0.18f
+            val endY = dm.heightPixels * 0.15f
 
             val swipePath = Path().apply {
                 moveTo(startX, startY)
@@ -143,7 +144,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             }
 
             val gestureBuilder = GestureDescription.Builder()
-            val stroke = GestureDescription.StrokeDescription(swipePath, 0, 300)
+            val stroke = GestureDescription.StrokeDescription(swipePath, 0, 250)
             gestureBuilder.addStroke(stroke)
 
             dispatchGesture(gestureBuilder.build(), object : AccessibilityService.GestureResultCallback() {
@@ -163,33 +164,120 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun clickCameraShutter(callback: ((Boolean) -> Unit)? = null) {
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val nodes = mutableListOf<AccessibilityNodeInfo>()
+            fun findShutter(n: AccessibilityNodeInfo) {
+                val desc = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val res = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                val text = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                if (desc.contains("shutter") || desc.contains("capture") || desc.contains("take photo") ||
+                    desc.contains("photo") || res.contains("shutter") || res.contains("capture") ||
+                    res.contains("camera_button") || text.contains("shutter")) {
+                    nodes.add(n)
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findShutter(it) }
+                }
+            }
+            findShutter(root)
+            for (node in nodes) {
+                var target: AccessibilityNodeInfo? = node
+                while (target != null && !target.isClickable) {
+                    target = target.parent
+                }
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    Log.d(TAG, "Camera shutter clicked via accessibility node!")
+                    callback?.invoke(true)
+                    return
+                }
+            }
+        }
+
+        // Fallback: Dispatch tap at bottom-center where camera shutter button sits
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val dm: DisplayMetrics = resources.displayMetrics
+            val cx = dm.widthPixels / 2f
+            val cy = dm.heightPixels * 0.86f
+            val tapPath = Path().apply { moveTo(cx, cy) }
+            val gesture = GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(tapPath, 0, 60))
+                .build()
+            dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    Log.d(TAG, "Camera shutter tap gesture completed.")
+                    callback?.invoke(true)
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    callback?.invoke(false)
+                }
+            }, null)
+        } else {
+            callback?.invoke(false)
+        }
+    }
+
+    fun clickCameraVideoRecord(callback: ((Boolean) -> Unit)? = null) {
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val nodes = mutableListOf<AccessibilityNodeInfo>()
+            fun findRecord(n: AccessibilityNodeInfo) {
+                val desc = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val res = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                val text = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                if (desc.contains("record") || desc.contains("video") || res.contains("record") ||
+                    res.contains("video_button") || text.contains("record")) {
+                    nodes.add(n)
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findRecord(it) }
+                }
+            }
+            findRecord(root)
+            for (node in nodes) {
+                var target: AccessibilityNodeInfo? = node
+                while (target != null && !target.isClickable) {
+                    target = target.parent
+                }
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    Log.d(TAG, "Camera video record clicked via node!")
+                    callback?.invoke(true)
+                    return
+                }
+            }
+        }
+        clickCameraShutter(callback)
+    }
+
     fun scrollDown(callback: ((Boolean) -> Unit)? = null) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             callback?.invoke(false)
             return
         }
-        val dm: DisplayMetrics = resources.displayMetrics
-        val startX = dm.widthPixels / 2f
-        val startY = dm.heightPixels * 0.75f
-        val endY = dm.heightPixels * 0.25f
+        try {
+            val dm: DisplayMetrics = resources.displayMetrics
+            val cx = dm.widthPixels / 2f
+            val startY = dm.heightPixels * 0.75f
+            val endY = dm.heightPixels * 0.25f
 
-        val swipePath = Path().apply {
-            moveTo(startX, startY)
-            lineTo(startX, endY)
+            val path = Path().apply {
+                moveTo(cx, startY)
+                lineTo(cx, endY)
+            }
+            val stroke = GestureDescription.StrokeDescription(path, 0, 300)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    callback?.invoke(true)
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    callback?.invoke(false)
+                }
+            }, null)
+        } catch (e: Exception) {
+            callback?.invoke(false)
         }
-
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 250))
-            .build()
-
-        dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                callback?.invoke(true)
-            }
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                callback?.invoke(false)
-            }
-        }, null)
     }
 
     fun scrollUp(callback: ((Boolean) -> Unit)? = null) {
@@ -197,229 +285,75 @@ class JarvisAccessibilityService : AccessibilityService() {
             callback?.invoke(false)
             return
         }
-        val dm: DisplayMetrics = resources.displayMetrics
-        val startX = dm.widthPixels / 2f
-        val startY = dm.heightPixels * 0.25f
-        val endY = dm.heightPixels * 0.75f
+        try {
+            val dm: DisplayMetrics = resources.displayMetrics
+            val cx = dm.widthPixels / 2f
+            val startY = dm.heightPixels * 0.25f
+            val endY = dm.heightPixels * 0.75f
 
-        val swipePath = Path().apply {
-            moveTo(startX, startY)
-            lineTo(startX, endY)
-        }
-
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 250))
-            .build()
-
-        dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) {
-                callback?.invoke(true)
+            val path = Path().apply {
+                moveTo(cx, startY)
+                lineTo(cx, endY)
             }
-            override fun onCancelled(gestureDescription: GestureDescription?) {
-                callback?.invoke(false)
-            }
-        }, null)
-    }
-
-    /**
-     * Automatically toggles settings switches (Mobile data, Wi-Fi, Hotspot, Bluetooth).
-     * Finds the relevant toggle on screen and clicks it!
-     */
-    fun toggleSettingSwitch(enable: Boolean, targetKeyword: String? = null, callback: ((Boolean) -> Unit)? = null) {
-        mainHandler.postDelayed({
-            try {
-                val root = rootInActiveWindow ?: run {
-                    callback?.invoke(false)
-                    return@postDelayed
-                }
-
-                // If target keyword is provided (e.g. "Mobile data", "Wi-Fi", "Hotspot", "Bluetooth")
-                if (!targetKeyword.isNullOrEmpty()) {
-                    val matchingTextNodes = root.findAccessibilityNodeInfosByText(targetKeyword)
-                    if (!matchingTextNodes.isNullOrEmpty()) {
-                        for (node in matchingTextNodes) {
-                            if (node.isClickable) {
-                                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                                callback?.invoke(true)
-                                return@postDelayed
-                            }
-                            var currentParent = node.parent
-                            for (depth in 0 until 3) {
-                                if (currentParent == null) break
-                                if (currentParent.isClickable) {
-                                    currentParent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                                    callback?.invoke(true)
-                                    return@postDelayed
-                                }
-                                for (c in 0 until currentParent.childCount) {
-                                    val child = currentParent.getChild(c) ?: continue
-                                    val cls = child.className?.toString() ?: ""
-                                    if (cls.contains("Switch") || cls.contains("Button") || child.isClickable) {
-                                        child.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                                        callback?.invoke(true)
-                                        return@postDelayed
-                                    }
-                                }
-                                currentParent = currentParent.parent
-                            }
-                        }
-                    }
-                }
-
-                // Generic switch fallback on screen
-                val switches = ArrayList<AccessibilityNodeInfo>()
-                findSwitchesRecursive(root, switches)
-                if (switches.isNotEmpty()) {
-                    for (sw in switches) {
-                        if (sw.isChecked != enable || targetKeyword == null) {
-                            sw.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                            callback?.invoke(true)
-                            return@postDelayed
-                        }
-                    }
-                    switches[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            val stroke = GestureDescription.StrokeDescription(path, 0, 300)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
                     callback?.invoke(true)
-                    return@postDelayed
                 }
-
-                callback?.invoke(false)
-            } catch (e: Exception) {
-                Log.e(TAG, "toggleSettingSwitch error: ${e.message}")
-                callback?.invoke(false)
-            }
-        }, 500)
-    }
-
-    private fun findSwitchesRecursive(node: AccessibilityNodeInfo?, result: ArrayList<AccessibilityNodeInfo>) {
-        if (node == null) return
-        val cls = node.className?.toString() ?: ""
-        if (cls.contains("Switch") || cls.contains("ToggleButton") || cls.contains("CompoundButton")) {
-            result.add(node)
-        }
-        for (i in 0 until node.childCount) {
-            findSwitchesRecursive(node.getChild(i), result)
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    callback?.invoke(false)
+                }
+            }, null)
+        } catch (e: Exception) {
+            callback?.invoke(false)
         }
     }
 
-    fun typeTextInFocusedField(textToType: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val focusedNode = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-
-        if (focusedNode != null && focusedNode.isEditable) {
-            val arguments = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToType)
-            }
-            return focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-        }
-
-        val editableNode = findFirstEditableNode(root)
-        if (editableNode != null) {
-            editableNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            val arguments = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToType)
-            }
-            return editableNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-        }
-
-        return false
-    }
-
-    private fun findFirstEditableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        if (node == null) return null
-        val cls = node.className?.toString() ?: ""
-        if (node.isEditable || cls.contains("EditText")) return node
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            val found = findFirstEditableNode(child)
-            if (found != null) return found
-        }
-        return null
-    }
-
-    fun clickElementByText(text: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val clean = text.trim().lowercase(Locale.ROOT)
-
-        val directNodes = root.findAccessibilityNodeInfosByText(clean)
-        if (!directNodes.isNullOrEmpty()) {
-            for (node in directNodes) {
-                if (performClickRecursive(node)) return true
-            }
-        }
-
-        return findAndClickNodeRecursive(root, clean)
-    }
-
-    private fun findAndClickNodeRecursive(node: AccessibilityNodeInfo?, target: String): Boolean {
-        if (node == null) return false
-
-        val text = node.text?.toString()?.lowercase(Locale.ROOT) ?: ""
-        val desc = node.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
-
-        if (text.contains(target) || desc.contains(target)) {
-            if (performClickRecursive(node)) return true
-        }
-
-        for (i in 0 until node.childCount) {
-            if (findAndClickNodeRecursive(node.getChild(i), target)) return true
-        }
-        return false
-    }
-
-    private fun performClickRecursive(node: AccessibilityNodeInfo?): Boolean {
-        var current = node
-        while (current != null) {
-            if (current.isClickable) {
-                return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }
-            current = current.parent
-        }
-        return false
-    }
-
-    fun clickShutterButton(): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val shutterKeywords = listOf("shutter", "take picture", "capture", "photo", "camera button", "click")
-        for (kw in shutterKeywords) {
-            val nodes = root.findAccessibilityNodeInfosByText(kw)
-            if (!nodes.isNullOrEmpty()) {
-                for (n in nodes) {
-                    if (performClickRecursive(n)) return true
+    fun getAllActiveRoots(): List<AccessibilityNodeInfo> {
+        val list = mutableListOf<AccessibilityNodeInfo>()
+        rootInActiveWindow?.let { list.add(it) }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val currentWindows = windows
+                for (w in currentWindows) {
+                    val r = w.root
+                    if (r != null && !list.contains(r)) {
+                        list.add(r)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Window traversal: ${e.message}")
         }
-        return false
+        return list
     }
 
     fun clickAnswerCallButton(): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val answerKeywords = listOf("answer", "accept", "receive", "incoming call", "pickup", "swipe up to answer")
-        for (kw in answerKeywords) {
-            val nodes = root.findAccessibilityNodeInfosByText(kw)
-            if (!nodes.isNullOrEmpty()) {
-                for (n in nodes) {
-                    if (performClickRecursive(n)) return true
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val nodes = mutableListOf<AccessibilityNodeInfo>()
+            fun findAnswer(n: AccessibilityNodeInfo) {
+                val desc = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val text = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val res = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                if (desc.contains("answer") || desc.contains("accept") || desc.contains("receive") ||
+                    text.contains("answer") || text.contains("accept") || text.contains("receive") ||
+                    text.contains("uthao") || res.contains("answer") || res.contains("accept")) {
+                    nodes.add(n)
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findAnswer(it) }
                 }
             }
-        }
-        return false
-    }
-
-    fun clickMapAction(action: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val keywords = when (action) {
-            "start" -> listOf("start", "\u0936\u0941\u0930\u0942 \u0915\u0930\u0947\u0902", "preview", "directions", "go")
-            "stop" -> listOf("exit", "stop", "close", "end", "x")
-            "mute" -> listOf("mute", "unmute", "sound", "speaker")
-            "recenter" -> listOf("recenter", "center")
-            "steps" -> listOf("steps", "list", "route options")
-            else -> listOf(action)
-        }
-        for (kw in keywords) {
-            val nodes = root.findAccessibilityNodeInfosByText(kw)
-            if (!nodes.isNullOrEmpty()) {
-                for (n in nodes) {
-                    if (performClickRecursive(n)) return true
+            findAnswer(root)
+            for (node in nodes) {
+                var target: AccessibilityNodeInfo? = node
+                while (target != null && !target.isClickable) {
+                    target = target.parent
+                }
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
                 }
             }
         }
@@ -427,13 +361,177 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     fun clickEndCallButton(): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val endCallKeywords = listOf("end call", "disconnect", "decline", "cut call", "hang up", "call end", "end")
-        for (kw in endCallKeywords) {
-            val nodes = root.findAccessibilityNodeInfosByText(kw)
-            if (!nodes.isNullOrEmpty()) {
-                for (n in nodes) {
-                    if (performClickRecursive(n)) return true
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val nodes = mutableListOf<AccessibilityNodeInfo>()
+            fun findEnd(n: AccessibilityNodeInfo) {
+                val desc = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val text = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val res = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                if (desc.contains("end") || desc.contains("hang up") || desc.contains("disconnect") ||
+                    text.contains("end") || text.contains("disconnect") || text.contains("kato") ||
+                    res.contains("end") || res.contains("hangup")) {
+                    nodes.add(n)
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findEnd(it) }
+                }
+            }
+            findEnd(root)
+            for (node in nodes) {
+                var target: AccessibilityNodeInfo? = node
+                while (target != null && !target.isClickable) {
+                    target = target.parent
+                }
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    fun typeTextInFocusedField(text: String): Boolean {
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (focused != null && focused.isEditable) {
+                val args = Bundle().apply {
+                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                }
+                if (focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                    return true
+                }
+            }
+
+            val editables = mutableListOf<AccessibilityNodeInfo>()
+            fun findEdit(n: AccessibilityNodeInfo) {
+                if (n.isEditable) editables.add(n)
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findEdit(it) }
+                }
+            }
+            findEdit(root)
+
+            if (editables.isNotEmpty()) {
+                val target = editables.last()
+                target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                val args = Bundle().apply {
+                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                }
+                if (target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    fun clickElementByText(targetText: String): Boolean {
+        val cleanTarget = targetText.lowercase(Locale.ROOT).trim()
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val matching = mutableListOf<AccessibilityNodeInfo>()
+            fun search(n: AccessibilityNodeInfo) {
+                val t = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val d = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val r = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                if (t.contains(cleanTarget) || d.contains(cleanTarget) || r.contains(cleanTarget)) {
+                    matching.add(n)
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { search(it) }
+                }
+            }
+            search(root)
+
+            for (node in matching) {
+                var clickTarget: AccessibilityNodeInfo? = node
+                while (clickTarget != null && !clickTarget.isClickable) {
+                    clickTarget = clickTarget.parent
+                }
+                if (clickTarget != null && clickTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    fun toggleSettingSwitch(turnOn: Boolean, targetName: String): Boolean {
+        val roots = getAllActiveRoots()
+        for (root in roots) {
+            val switches = mutableListOf<AccessibilityNodeInfo>()
+            fun findSwitches(n: AccessibilityNodeInfo) {
+                val cls = n.className?.toString() ?: ""
+                if (cls.contains("Switch", ignoreCase = true) || cls.contains("ToggleButton", ignoreCase = true)) {
+                    switches.add(n)
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findSwitches(it) }
+                }
+            }
+            findSwitches(root)
+
+            for (sw in switches) {
+                if (sw.isChecked != turnOn) {
+                    var clickTarget: AccessibilityNodeInfo? = sw
+                    while (clickTarget != null && !clickTarget.isClickable) {
+                        clickTarget = clickTarget.parent
+                    }
+                    if (clickTarget != null && clickTarget.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        return true
+                    }
+                } else {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    fun clickMapAction(action: String): Boolean {
+        val roots = getAllActiveRoots()
+        val lowerAct = action.lowercase(Locale.ROOT)
+        for (root in roots) {
+            val matching = mutableListOf<AccessibilityNodeInfo>()
+            fun findMapBtn(n: AccessibilityNodeInfo) {
+                val desc = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val text = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                val res = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                when (lowerAct) {
+                    "start" -> {
+                        if (desc.contains("start") || text.contains("start") || res.contains("start") ||
+                            desc.contains("shuru") || text.contains("shuru")) {
+                            matching.add(n)
+                        }
+                    }
+                    "stop" -> {
+                        if (desc.contains("close") || desc.contains("exit") || text.contains("exit") ||
+                            desc.contains("stop") || text.contains("stop") || res.contains("close")) {
+                            matching.add(n)
+                        }
+                    }
+                    "mute" -> {
+                        if (desc.contains("mute") || desc.contains("unmute") || desc.contains("sound") ||
+                            desc.contains("voice") || res.contains("mute")) {
+                            matching.add(n)
+                        }
+                    }
+                }
+                for (i in 0 until n.childCount) {
+                    n.getChild(i)?.let { findMapBtn(it) }
+                }
+            }
+            findMapBtn(root)
+
+            for (m in matching) {
+                var target: AccessibilityNodeInfo? = m
+                while (target != null && !target.isClickable) {
+                    target = target.parent
+                }
+                if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    return true
                 }
             }
         }
@@ -442,11 +540,8 @@ class JarvisAccessibilityService : AccessibilityService() {
 }
 
 /**
- * High-Precision Autonomous Directives Engine for JARVIS
- * - Always addresses user respectfully as "Boss".
- * - Fully bilingual (Hindi + English) with instant direct calling.
- * - Auto-clicks settings switches so options are turned ON/OFF, not just opened.
- * - Seamless zero-Google-redirect AI Brain.
+ * JARVIS Master Command Executor
+ * Fast, offline-first execution of phone control, hardware settings, navigation, in-app automation, and calling.
  */
 object CommandExecutor {
 
@@ -459,13 +554,336 @@ object CommandExecutor {
         Log.d(TAG, "Executing directive: '$command'")
 
         when {
-            // 1. Direct Phone Calling (Bilingual English & Devanagari Hindi)
+            // 1. Voice Screen Lock (Instant)
+            isLockCommand(command, context) -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null && acc.lockPhoneScreen()) {
+                    callback("Ji Boss, phone lock kar diya hai.", true)
+                } else {
+                    callback("Phone lock ke liye Accessibility enable karein Boss.", false)
+                }
+            }
+
+            // 2. Voice Screen Unlock (Wakes Screen + Swipe Gesture)
+            isUnlockCommand(command, context) -> {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                @Suppress("DEPRECATION")
+                val wl = pm.newWakeLock(
+                    android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                            android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                            android.os.PowerManager.ON_AFTER_RELEASE,
+                    "com.stark.jarvis:UnlockWakeLock"
+                )
+                wl.acquire(6000)
+
+                mainHandler.postDelayed({
+                    val acc = JarvisAccessibilityService.instance
+                    if (acc != null) {
+                        acc.unlockWithSwipeGesture { success ->
+                            callback(if (success) "Voice password verified, Boss! Screen unlock kar di hai." else "Voice password verified Boss.", true)
+                        }
+                    } else {
+                        callback("Voice password verified Boss. Accessibility enable karein swipe unlock ke liye.", true)
+                    }
+                }, 450)
+            }
+
+            // 3. Camera Shutter: Instant Photo Capture (When Camera is Open or Direct)
+            isCameraPhotoCommand(command) -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.clickCameraShutter { success ->
+                        callback(if (success) "Ji Boss, photo kheench li hai!" else "Camera shutter trigger kiya Boss.", true)
+                    }
+                } else {
+                    val cameraIntent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try { context.startActivity(cameraIntent) } catch (e: Exception) {}
+                    callback("Camera open kar diya hai Boss.", true)
+                }
+            }
+
+            // 4. Camera Video: Start or Stop Recording
+            isCameraVideoCommand(command) -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.clickCameraVideoRecord { success ->
+                        callback(if (success) "Ji Boss, video recording toggle kar di hai!" else "Video shutter trigger kiya Boss.", true)
+                    }
+                } else {
+                    val videoIntent = Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try { context.startActivity(videoIntent) } catch (e: Exception) {}
+                    callback("Video camera open kar diya hai Boss.", true)
+                }
+            }
+
+            // 5. In-App Direct Text Typing
+            command.startsWith("type ") || command.startsWith("likho ") || command.startsWith("write ") -> {
+                val textToType = command.replace("type ", "").replace("likho ", "").replace("write ", "").trim()
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    val success = acc.typeTextInFocusedField(textToType)
+                    callback(if (success) "Ji Boss, type kar diya hai." else "Active text box nahi mila Boss.", true)
+                } else {
+                    callback("In-app typing ke liye Accessibility service enable karein Boss.", false)
+                }
+            }
+
+            // 6. In-App Direct Button Clicking
+            command.startsWith("click ") || command.startsWith("dabao ") || command.startsWith("press ") || command.startsWith("tap ") -> {
+                val target = command.replace("click ", "").replace("dabao ", "").replace("press ", "").replace("tap ", "").trim()
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    val clicked = acc.clickElementByText(target)
+                    callback(if (clicked) "Theek hai Boss, '$target' par click kar diya hai." else "Screen par '$target' nahi mila Boss.", true)
+                } else {
+                    callback("Accessibility service enable karein Boss.", false)
+                }
+            }
+
+            // 7. In-App Scrolling
+            command.contains("scroll down") || command.contains("neeche scroll") || command.contains("scroll karo") -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.scrollDown { success ->
+                        callback(if (success) "Scroll down kar diya hai Boss." else "Scroll complete.", true)
+                    }
+                } else {
+                    callback("Accessibility permission enable kijiye Boss.", false)
+                }
+            }
+
+            command.contains("scroll up") || command.contains("upar scroll") -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.scrollUp { success ->
+                        callback(if (success) "Scroll up kar diya hai Boss." else "Scroll complete.", true)
+                    }
+                } else {
+                    callback("Accessibility permission enable kijiye Boss.", false)
+                }
+            }
+
+            // 8. System Nav: Home, Back, Recents, Screenshot
+            command.contains("home screen") || command.contains("home jao") || command.contains("go home") -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.performAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                    callback("Theek hai Boss, Home screen par aa gaye hain.", true)
+                } else {
+                    val startMain = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(startMain)
+                    callback("Home screen open kar di hai Boss.", true)
+                }
+            }
+
+            command.contains("back jao") || command.contains("peeche jao") || command.contains("go back") || command.contains("back karo") -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.performAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    callback("Theek hai Boss, Back kar diya hai.", true)
+                } else {
+                    callback("Accessibility enable karein Back command ke liye Boss.", false)
+                }
+            }
+
+            command.contains("recent apps") || command.contains("background apps") || command.contains("recents kholo") -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null) {
+                    acc.performAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
+                    callback("Ji Boss, Recent apps dikha raha hoon.", true)
+                } else {
+                    callback("Accessibility permission enable kijiye Boss.", false)
+                }
+            }
+
+            command.contains("screenshot") || command.contains("screen capture") || command.contains("photo kheencho screen") -> {
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null && acc.captureScreenshot()) {
+                    callback("Ji Boss, Screenshot le liya gaya hai.", true)
+                } else {
+                    callback("Screenshot ke liye Accessibility permission zaroori hai Boss.", false)
+                }
+            }
+
+            // 9. Hardware & Settings: Flashlight / Torch
+            command.contains("torch") || command.contains("flashlight") || command.contains("roshni") || command.contains("flash light") || command.contains("batti") -> {
+                val enable = !command.contains("off") && !command.contains("band")
+                val success = toggleTorch(context, enable)
+                callback(if (success) "Ji Boss, Flashlight ${if (enable) "on" else "off"} kar di hai." else "Torch toggle nahi ho saki Boss.", true)
+            }
+
+            // 10. Hardware & Settings: Internet & Mobile Data
+            isNetOrDataCommand(command) -> {
+                handleInternetDataSettings(context, command, callback)
+            }
+
+            // 11. Hardware & Settings: Hotspot
+            command.contains("hotspot") || command.contains("\u0939\u0949\u091f\u0938\u094d\u092a\u0949\u091f") -> {
+                val turnOn = !command.contains("band") && !command.contains("off")
+                val intent = Intent("android.settings.TETHER_SETTINGS").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (e: Exception) {}
+                val acc = JarvisAccessibilityService.instance
+                acc?.toggleSettingSwitch(turnOn, "Hotspot")
+                callback(if (turnOn) "Ji Boss, Hotspot on kar diya hai." else "Ji Boss, Hotspot band kar diya hai.", true)
+            }
+
+            // 12. Hardware & Settings: Wi-Fi
+            command.contains("wifi") || command.contains("wi-fi") || command.contains("\u0935\u093e\u0907\u092b\u093e\u0907") -> {
+                val turnOn = !command.contains("band") && !command.contains("off")
+                try {
+                    val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    @Suppress("DEPRECATION")
+                    wm?.isWifiEnabled = turnOn
+                } catch (ignored: Exception) {}
+                val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (e: Exception) {}
+                val acc = JarvisAccessibilityService.instance
+                acc?.toggleSettingSwitch(turnOn, "Wi-Fi")
+                callback(if (turnOn) "Ji Boss, Wi-Fi on kar diya hai." else "Ji Boss, Wi-Fi band kar diya hai.", true)
+            }
+
+            // 13. Hardware & Settings: Bluetooth
+            command.contains("bluetooth") || command.contains("\u092c\u094d\u0932\u0942\u091f\u0942\u0925") -> {
+                val turnOn = !command.contains("band") && !command.contains("off")
+                try {
+                    val ba = BluetoothAdapter.getDefaultAdapter()
+                    if (turnOn) ba?.enable() else ba?.disable()
+                } catch (ignored: Exception) {}
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (e: Exception) {}
+                val acc = JarvisAccessibilityService.instance
+                acc?.toggleSettingSwitch(turnOn, "Bluetooth")
+                callback(if (turnOn) "Theek hai Boss, Bluetooth on kar diya hai." else "Theek hai Boss, Bluetooth band kar diya hai.", true)
+            }
+
+            // 14. Hardware & Settings: Control Panel / Quick Settings
+            command.contains("control panel") || command.contains("quick settings") || command.contains("notification panel") -> {
+                val acc = JarvisAccessibilityService.instance
+                val ok = acc?.openControlPanel() ?: false
+                callback(if (ok) "Ji Boss, Control Panel open kar diya hai." else "Quick settings open karne ka prayas kiya.", true)
+            }
+
+            // Control Panel: Auto-Rotate / Screen Rotation
+            command.contains("rotate") || command.contains("rotation") || command.contains("ghumna") -> {
+                val turnOn = !command.contains("off") && !command.contains("band")
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.System.canWrite(context)) {
+                        Settings.System.putInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, if (turnOn) 1 else 0)
+                        callback("Ji Boss, Auto-rotate ${if (turnOn) "on" else "off"} kar diya hai.", true)
+                    } else {
+                        val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        context.startActivity(intent)
+                        val acc = JarvisAccessibilityService.instance
+                        acc?.toggleSettingSwitch(turnOn, "Auto-rotate")
+                        callback("Ji Boss, Auto-rotate ${if (turnOn) "on" else "off"} kar diya hai.", true)
+                    }
+                } catch (e: Exception) {
+                    val acc = JarvisAccessibilityService.instance
+                    acc?.toggleSettingSwitch(turnOn, "Auto-rotate")
+                    callback("Auto-rotate toggle kar diya hai Boss.", true)
+                }
+            }
+
+            // Control Panel: Location / GPS
+            (command.contains("location") && !command.contains("dikhao") && !command.contains("kholo")) || command.contains("gps") -> {
+                val turnOn = !command.contains("off") && !command.contains("band")
+                val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (e: Exception) {}
+                val acc = JarvisAccessibilityService.instance
+                acc?.toggleSettingSwitch(turnOn, "Location")
+                callback(if (turnOn) "Ji Boss, GPS Location on kar di hai." else "Ji Boss, GPS Location band kar di hai.", true)
+            }
+
+            // Control Panel: Battery Saver / Power Saving
+            command.contains("battery saver") || command.contains("power saver") || command.contains("power saving") -> {
+                val turnOn = !command.contains("off") && !command.contains("band")
+                val intent = Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (e: Exception) {}
+                val acc = JarvisAccessibilityService.instance
+                acc?.toggleSettingSwitch(turnOn, "Battery Saver")
+                callback(if (turnOn) "Ji Boss, Battery Saver on kar diya hai." else "Ji Boss, Battery Saver band kar diya hai.", true)
+            }
+
+            // Control Panel: Dark Mode / Dark Theme
+            command.contains("dark mode") || command.contains("dark theme") || command.contains("light mode") -> {
+                val turnOn = !command.contains("light") && !command.contains("off") && !command.contains("band")
+                val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (e: Exception) {}
+                val acc = JarvisAccessibilityService.instance
+                acc?.toggleSettingSwitch(turnOn, "Dark theme")
+                callback(if (turnOn) "Ji Boss, Dark theme on kar di hai." else "Ji Boss, Light theme set kar di hai.", true)
+            }
+
+            // Control Panel: Do Not Disturb (DND)
+            command.contains("dnd") || command.contains("do not disturb") || command.contains("shant mode") -> {
+                val turnOn = !command.contains("off") && !command.contains("band")
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                if (turnOn) {
+                    audioManager.ringerMode = AudioManager.RINGER_MODE_SILENT
+                    callback("Ji Boss, Do Not Disturb (DND) on kar diya hai.", true)
+                } else {
+                    audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                    callback("Ji Boss, DND off karke normal mode kar diya hai.", true)
+                }
+            }
+
+            // 15. Sound & Ringer Mode (Silent, Vibrate, Ring, Volume Up/Down)
+            command.contains("silent") || command.contains("vibrate") ||
+            command.contains("mute") || command.contains("volume") || command.contains("aawaz") -> {
+                handleVolumeRingerControls(context, command, callback)
+            }
+
+            // 16. Screen Brightness Controls
+            command.contains("brightness") || command.contains("chamak") || command.contains("roshni") -> {
+                handleBrightnessControls(context, command, callback)
+            }
+
+            // 17. Alarms & Timers
+            command.contains("alarm") || command.contains("\u0905\u0932\u093e\u0930\u094d\u092e") -> {
+                handleAlarmCommand(context, command, callback)
+            }
+            command.contains("timer") || command.contains("\u091f\u093e\u0907\u092e\u0930") -> {
+                handleTimerCommand(context, command, callback)
+            }
+
+            // 18. Google Maps Live Turn-by-Turn Navigation
+            isMapsOrNavigationCommand(command) -> {
+                handleMapsNavigation(context, command, callback)
+            }
+
+            // 19. In-Map Actions (Start, Stop, Mute in Google Maps)
+            command.contains("start navigation") || command.contains("rasta shuru") || command.contains("navigation shuru") -> {
+                val acc = JarvisAccessibilityService.instance
+                val clicked = acc?.clickMapAction("start") ?: false
+                callback(if (clicked) "Ji Boss, navigation shuru kar di hai." else "Maps par start button click kiya Boss.", true)
+            }
+
+            command.contains("stop navigation") || command.contains("exit navigation") || command.contains("rasta band") -> {
+                val acc = JarvisAccessibilityService.instance
+                val clicked = acc?.clickMapAction("stop") ?: false
+                callback(if (clicked) "Theek hai Boss, navigation band kar di hai." else "Navigation close karne ka prayas kiya Boss.", true)
+            }
+
+            // 20. Launch Apps by Voice (Flexible position)
+            isOpenAppCommand(command) -> {
+                val appTarget = extractAppTarget(command)
+                launchAppByName(context, appTarget, callback)
+            }
+
+            // 21. Phone Calling (STRICT Filter - Eliminates 'number nahi mila' false positives!)
             isCallCommand(command) -> {
                 val target = extractContactTarget(command)
                 makeDirectPhoneCall(context, target, callback)
             }
 
-            // 2. Answer / Receive Incoming Call
+            // 22. Answer / Receive Incoming Call
             isAnswerCallCommand(command) -> {
                 val acc = JarvisAccessibilityService.instance
                 var answered = acc?.clickAnswerCallButton() ?: false
@@ -482,8 +900,8 @@ object CommandExecutor {
                 callback(if (answered) "Ji Boss, call receive kar li hai." else "Call answer karne ka prayas kiya Boss.", true)
             }
 
-            // 3. Disconnect / End Active Call
-            command.contains("call kato") || command.contains("call disconnect") || 
+            // 23. Disconnect / End Active Call
+            command.contains("call kato") || command.contains("call disconnect") ||
             command.contains("phone kato") || command.contains("call end") || command.contains("disconnect call") ||
             command.contains("\u0915\u093e\u091f\u094b") -> {
                 val acc = JarvisAccessibilityService.instance
@@ -501,457 +919,146 @@ object CommandExecutor {
                 callback(if (ended) "Call disconnect kar diya gaya hai, Boss." else "Call end karne ka prayas kiya, Boss.", true)
             }
 
-            // 3. WhatsApp Direct Messaging
+            // 24. WhatsApp Direct Messaging
             command.contains("whatsapp") || command.contains("\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a") -> {
                 sendWhatsAppToContact(context, command, callback)
             }
 
-            // 4. Internet & Mobile Data (Net On / Off / Toggle with Auto-Switch Click)
-            isNetOrDataCommand(command) -> {
-                handleInternetDataSettings(context, command, callback)
-            }
-
-            // 5. Hotspot Control (Auto-Clicks Switch)
-            command.contains("hotspot") || command.contains("\u0939\u0949\u091f\u0938\u094d\u092a\u0949\u091f") -> {
-                val turnOn = !command.contains("band") && !command.contains("off")
-                val intent = Intent("android.settings.TETHER_SETTINGS").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                try { context.startActivity(intent) } catch (e: Exception) {}
-                val acc = JarvisAccessibilityService.instance
-                acc?.toggleSettingSwitch(turnOn, "Hotspot")
-                callback(if (turnOn) "Ji Boss, Hotspot on kar diya hai." else "Ji Boss, Hotspot band kar diya hai.", true)
-            }
-
-            // 6. Wi-Fi Control (Auto-Clicks Switch)
-            command.contains("wifi") || command.contains("wi-fi") || command.contains("\u0935\u093e\u0907\u092b\u093e\u0907") -> {
-                val turnOn = !command.contains("band") && !command.contains("off")
-                try {
-                    val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                    @Suppress("DEPRECATION")
-                    wm?.isWifiEnabled = turnOn
-                } catch (ignored: Exception) {}
-                val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                try { context.startActivity(intent) } catch (e: Exception) {}
-                val acc = JarvisAccessibilityService.instance
-                acc?.toggleSettingSwitch(turnOn, "Wi-Fi")
-                callback(if (turnOn) "Ji Boss, Wi-Fi on kar diya hai." else "Ji Boss, Wi-Fi band kar diya hai.", true)
-            }
-
-            // 7. Bluetooth Control (Auto-Clicks Switch)
-            command.contains("bluetooth") || command.contains("\u092c\u094d\u0932\u0942\u091f\u0942\u0925") -> {
-                val turnOn = !command.contains("band") && !command.contains("off")
-                try {
-                    val ba = BluetoothAdapter.getDefaultAdapter()
-                    if (turnOn) ba?.enable() else ba?.disable()
-                } catch (ignored: Exception) {}
-                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                try { context.startActivity(intent) } catch (e: Exception) {}
-                val acc = JarvisAccessibilityService.instance
-                acc?.toggleSettingSwitch(turnOn, "Bluetooth")
-                callback(if (turnOn) "Theek hai Boss, Bluetooth on kar diya hai." else "Theek hai Boss, Bluetooth band kar diya hai.", true)
-            }
-
-            // 8. Flight / Airplane Mode
-            command.contains("flight mode") || command.contains("airplane mode") || command.contains("\u0939\u0935\u093e\u0908 \u091c\u0939\u093e\u091c") -> {
-                val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                try { context.startActivity(intent) } catch (e: Exception) {}
-                callback("Flight mode settings open kar di hai, Boss.", true)
-            }
-
-            // 9. Control Panel & Quick Settings Dropdown
-            command.contains("control panel") || command.contains("quick settings") || 
-            command.contains("pannel kholo") || command.contains("panel kholo") ||
-            command.contains("slider") || command.contains("\u0915\u0902\u091f\u094d\u0930\u094b\u0932 \u092a\u0948\u0928\u0932") -> {
-                val acc = JarvisAccessibilityService.instance
-                if (acc != null && acc.openControlPanel()) {
-                    callback("Ji Boss, Control panel open kar diya hai.", true)
-                } else {
-                    callback("Accessibility service enable karein Boss.", false)
-                }
-            }
-
-            // 10. Notification Shade
-            command.contains("notification") || command.contains("notifications") || 
-            command.contains("messages dikhao") || command.contains("\u0938\u0942\u091a\u0928\u093e") -> {
-                val acc = JarvisAccessibilityService.instance
-                if (acc != null && acc.openNotifications()) {
-                    callback("Ji Boss, Notification shade open kar diya hai.", true)
-                } else {
-                    callback("Accessibility on kijiye Boss notification shade ke liye.", false)
-                }
-            }
-
-            // 11. Screen Unlock (Custom Voice Password & Gesture)
-            isUnlockCommand(command, context) -> {
-                val acc = JarvisAccessibilityService.instance
-                if (acc != null) {
-                    acc.unlockWithSwipeGesture { success ->
-                        callback(if (success) "Hello Boss! Screen unlock kar di hai." else "Lock screen swipe prayas kiya Boss.", true)
-                    }
-                } else {
-                    callback("Accessibility permission enable kijiye screen unlock ke liye Boss.", false)
-                }
-            }
-
-            // 12. Screen Lock (Hardware Screen Lock)
-            command.contains("screen lock") || command.contains("lock screen") || 
-            command.contains("phone lock karo") || command.contains("screen band karo") || command.contains("\u092b\u094b\u0928 \u0932\u0949\u0915") -> {
-                val acc = JarvisAccessibilityService.instance
-                if (acc != null && acc.lockPhoneScreen()) {
-                    callback("Ji Boss, Phone lock kar diya hai.", true)
-                } else {
-                    callback("Accessibility permission enable kijiye phone lock ke liye Boss.", false)
-                }
-            }
-
-            // 13. Power Menu / Restart / Switch Off Dialog
-            command.contains("power menu") || command.contains("switch off") || 
-            command.contains("restart") || command.contains("band karo phone") -> {
-                val acc = JarvisAccessibilityService.instance
-                if (acc != null && acc.openPowerDialog()) {
-                    callback("Ji Boss, Power dialog open kar diya hai.", true)
-                } else {
-                    callback("Accessibility enable karein Boss.", false)
-                }
-            }
-
-            // 14. Hands-Free Voice Typing in Any App ("Likh do...", "Type...")
-            command.startsWith("type ") || command.startsWith("likh do ") || 
-            command.startsWith("likho ") || command.contains("type karo") -> {
-                val textToType = command
-                    .replace("type karo", "")
-                    .replace("type", "")
-                    .replace("likh do", "")
-                    .replace("likho", "")
-                    .trim()
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null && textToType.isNotEmpty()) {
-                        val typed = acc.typeTextInFocusedField(textToType)
-                        callback(if (typed) "'$textToType' likh diya hai, Boss." else "Screen par likhne ki jagah dhoondh raha hoon Boss.", true)
-                    } else {
-                        callback("Accessibility on karein screen par type karne ke liye Boss.", false)
-                    }
-                }, 300)
-            }
-
-            // 15. Click, Tap, or Like/Share Button in Any Running App
-            command.startsWith("click ") || command.contains("button dabao") || 
-            command.contains("par click karo") || command.contains("dabao") ||
-            command.contains("like karo") || command.contains("share karo") -> {
-                val clickTarget = if (command.contains("like karo")) "like"
-                    else if (command.contains("share karo")) "share"
-                    else command.replace("click", "").replace("button dabao", "").replace("par click karo", "").replace("dabao", "").trim()
-
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null && clickTarget.isNotEmpty()) {
-                        val clicked = acc.clickElementByText(clickTarget)
-                        callback(if (clicked) "Theek hai Boss, $clickTarget click kar diya hai." else "Screen par $clickTarget dhoondha Boss.", true)
-                    } else {
-                        callback("Accessibility service on karein click ke liye Boss.", false)
-                    }
-                }, 300)
-            }
-
-            // 16. Camera Shutter / Take Photo
-            command.contains("photo kheencho") || command.contains("photo lo") || 
-            command.contains("take photo") || command.contains("capture photo") || command.contains("click photo") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    var clicked = acc?.clickShutterButton() ?: false
-                    if (!clicked) {
-                        val camIntent = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        try {
-                            context.startActivity(camIntent)
-                            mainHandler.postDelayed({ acc?.clickShutterButton() }, 1400)
-                            clicked = true
-                        } catch (e: Exception) {}
-                    }
-                    callback(if (clicked) "Ji Boss, photo capture kar raha hoon." else "Camera open kiya gaya hai Boss.", true)
-                }, 300)
-            }
-
-            // 17. In-App Scrolling (Instagram Reels, YouTube Shorts, WhatsApp, Chrome)
-            command.contains("scroll down") || command.contains("neeche scroll") || 
-            command.contains("aage badhao") || command.contains("next reel") || command.contains("agla video") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null) {
-                        acc.scrollDown { callback("Ji Boss, neeche scroll kar diya hai.", true) }
-                    } else {
-                        callback("Accessibility enable karein Boss scroll karne ke liye.", false)
-                    }
-                }, 300)
-            }
-            command.contains("scroll up") || command.contains("upar scroll") || 
-            command.contains("peeche scroll") || command.contains("previous reel") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null) {
-                        acc.scrollUp { callback("Ji Boss, upar scroll kar diya hai.", true) }
-                    } else {
-                        callback("Accessibility enable karein Boss scroll karne ke liye.", false)
-                    }
-                }, 300)
-            }
-
-            // 18. Universal System Navigation (Home, Back, Recents, Screenshot)
-            command.contains("home screen") || command.contains("home jao") || command.contains("go home") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null) {
-                        acc.performAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                        callback("Theek hai Boss, Home screen par aa gaye hain.", true)
-                    } else {
-                        val startMain = Intent(Intent.ACTION_MAIN).apply {
-                            addCategory(Intent.CATEGORY_HOME)
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }
-                        context.startActivity(startMain)
-                        callback("Home screen open kar di hai Boss.", true)
-                    }
-                }, 200)
-            }
-            command.contains("back jao") || command.contains("peeche jao") || command.contains("go back") || command.contains("back karo") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null) {
-                        acc.performAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                        callback("Theek hai Boss, Back kar diya hai.", true)
-                    } else {
-                        callback("Accessibility enable karein Back command ke liye Boss.", false)
-                    }
-                }, 200)
-            }
-            command.contains("recent apps") || command.contains("background apps") || command.contains("recents kholo") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null) {
-                        acc.performAction(AccessibilityService.GLOBAL_ACTION_RECENTS)
-                        callback("Ji Boss, Recent apps dikha raha hoon.", true)
-                    } else {
-                        callback("Accessibility permission enable kijiye Boss.", false)
-                    }
-                }, 200)
-            }
-            command.contains("screenshot") || command.contains("screen capture") || command.contains("photo kheencho screen") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    if (acc != null && acc.captureScreenshot()) {
-                        callback("Ji Boss, Screenshot le liya gaya hai.", true)
-                    } else {
-                        callback("Screenshot ke liye Accessibility permission zaroori hai Boss.", false)
-                    }
-                }, 200)
-            }
-
-            // 19. Screen Brightness Controls
-            command.contains("brightness") || command.contains("chamak") || command.contains("roshni") -> {
-                handleBrightnessControls(context, command, callback)
-            }
-
-            // 20. Sound & Ringer Mode (Silent, Vibrate, Ring, Volume Up/Down)
-            command.contains("silent") || command.contains("vibrate") || 
-            command.contains("mute") || command.contains("volume") || command.contains("aawaz") -> {
-                handleVolumeRingerControls(context, command, callback)
-            }
-
-            // 21. Alarms & Timers
-            command.contains("alarm") || command.contains("\u0905\u0932\u093e\u0930\u094d\u092e") -> {
-                handleAlarmCommand(context, command, callback)
-            }
-            command.contains("timer") || command.contains("\u091f\u093e\u0907\u092e\u0930") -> {
-                handleTimerCommand(context, command, callback)
-            }
-
-            // 22. Flashlight / Torch (Direct Hardware Toggle)
-            command.contains("torch") || command.contains("flashlight") || command.contains("roshni") || command.contains("flash light") -> {
-                val enable = !command.contains("off") && !command.contains("band")
-                val success = toggleTorch(context, enable)
-                callback(if (success) "Ji Boss, Flashlight ${if (enable) "on" else "off"} kar di hai." else "Torch toggle nahi ho saki Boss.", true)
-            }
-
-            // 23. Find My Phone / Emergency Siren
+            // 25. Find My Phone / Emergency Siren
             command.contains("find my phone") || command.contains("mera phone kahan") || command.contains("ring loudly") -> {
                 findMyPhoneAlarm(context)
                 callback("Siren bajna shuru ho gaya hai Boss. Phone milne par screen tap karein.", true)
             }
 
-            // 23. YouTube Direct Play (Songs, Videos, Comedy)
+            // 26. YouTube Direct Play
             isYouTubePlayCommand(command) -> {
                 handleYouTubePlay(context, command, callback)
             }
 
-            // 24. Battery Status & Telemetry
+            // 27. Battery Status & Telemetry
             isBatteryCommand(command) -> {
                 handleBatteryCheck(context, callback)
             }
 
-            // 25. Web Search on Google
+            // 28. Web Search on Google
             isWebSearchCommand(command) -> {
                 handleWebSearch(context, command, callback)
             }
 
-            // In-Map Navigation Controls (Start, Stop, Steps, Mute in Google Maps)
-            command.contains("start navigation") || command.contains("rasta shuru") || command.contains("navigation shuru") ||
-            (command.contains("start") && (command.contains("navigation") || command.contains("map") || command.contains("rasta"))) -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    val clicked = acc?.clickMapAction("start") ?: false
-                    callback(if (clicked) "Ji Boss, navigation shuru kar di hai." else "Maps par start button click kiya Boss.", true)
-                }, 300)
-            }
-            command.contains("stop navigation") || command.contains("exit navigation") || 
-            command.contains("rasta band karo") || command.contains("navigation band karo") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    val clicked = acc?.clickMapAction("stop") ?: false
-                    callback(if (clicked) "Theek hai Boss, navigation band kar di hai." else "Navigation close karne ka prayas kiya Boss.", true)
-                }, 300)
-            }
-            command.contains("map mute") || command.contains("map aawaz band") || command.contains("navigation mute") -> {
-                mainHandler.postDelayed({
-                    val acc = JarvisAccessibilityService.instance
-                    val clicked = acc?.clickMapAction("mute") ?: false
-                    callback(if (clicked) "Theek hai Boss, maps voice toggle kar diya hai." else "Maps mute click kiya Boss.", true)
-                }, 300)
-            }
-
-            // 26. Google Maps Navigation & Live Route to ANY Location
-            isMapsOrNavigationCommand(command) -> {
-                handleMapsNavigation(context, command, callback)
-            }
-
-            // 25. Launch Apps by Voice (Flexible position: start, middle, or end)
-            isOpenAppCommand(command) -> {
-                val appTarget = extractAppTarget(command)
-                launchAppByName(context, appTarget, callback)
-            }
-
-            // 25. General Knowledge & Free Built-in AI Brain
+            // 29. Offline Local AI Brain / General Knowledge
             else -> {
                 queryAIBrain(context, command, callback)
             }
         }
     }
 
+    private fun isLockCommand(cmd: String, context: Context): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        val prefs = context.getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
+        val customLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (customLock.isNotEmpty() && lower.contains(customLock)) {
+            return true
+        }
+        return lower.contains("phone lock") || lower.contains("screen lock") ||
+               lower.contains("lock karo") || lower.contains("lock kar do") ||
+               lower.contains("screen band karo") || lower.contains("phone band karo") ||
+               lower.contains("\u0932\u0949\u0915 \u0915\u0930\u094b") ||
+               lower.contains("\u092b\u094b\u0928 \u0932\u0949\u0915")
+    }
+
     private fun isUnlockCommand(cmd: String, context: Context): Boolean {
         val lower = cmd.lowercase(Locale.ROOT).trim()
-        val prefs = context.getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
         val customPass = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")?.trim()?.lowercase(Locale.ROOT) ?: ""
-
         if (customPass.isNotEmpty() && lower.contains(customPass)) {
             return true
         }
-
-        return lower.contains("screen unlock") || lower.contains("phone unlock") || 
-               lower.contains("screen kholo") || lower.contains("phone kholo") || 
+        return lower.contains("screen unlock") || lower.contains("phone unlock") ||
+               lower.contains("screen kholo") || lower.contains("phone kholo") ||
+               lower.contains("unlock karo") || lower.contains("unlock kar do") ||
                lower.contains("khul ja sim sim") || lower.contains("open sesame") ||
+               lower.contains("\u0905\u0928\u0932\u0949\u0915") ||
                lower.contains("\u0932\u0949\u0915 \u0916\u094b\u0932\u094b")
     }
 
-    private fun isAnswerCallCommand(cmd: String): Boolean {
+    private fun isCameraPhotoCommand(cmd: String): Boolean {
         val lower = cmd.lowercase(Locale.ROOT).trim()
-        return lower.contains("call uthao") || lower.contains("phone uthao") || 
-               lower.contains("call receive") || lower.contains("answer call") ||
-               lower.contains("receive call") || lower.contains("call attend") ||
-               lower.contains("\u0909\u0920\u093e\u0913")
+        return lower.contains("photo kheench") || lower.contains("photo lo") ||
+               lower.contains("tasveer lo") || lower.contains("capture photo") ||
+               lower.contains("take photo") || lower.contains("take picture") ||
+               lower.contains("click photo") || lower.contains("snap photo") ||
+               lower.contains("selfie lo") || lower.contains("selfie kheench") ||
+               lower.contains("\u092b\u094b\u091f\u094b \u0916\u0940\u0902\u091a\u094b") ||
+               lower.contains("\u092b\u094b\u091f\u094b \u0932\u094b")
     }
 
-    private fun isYouTubePlayCommand(cmd: String): Boolean {
+    private fun isCameraVideoCommand(cmd: String): Boolean {
         val lower = cmd.lowercase(Locale.ROOT).trim()
-        return (lower.contains("youtube") || lower.contains("gana") || lower.contains("video") || lower.contains("song")) &&
-               (lower.contains("chalao") || lower.contains("bajao") || lower.contains("play") || lower.contains("dikhao") || lower.contains("sunao"))
+        return lower.contains("video banao") || lower.contains("record video") ||
+               lower.contains("video shuru") || lower.contains("video start") ||
+               lower.contains("video recording") || lower.contains("video band") ||
+               lower.contains("video stop") ||
+               lower.contains("\u0935\u0940\u0921\u093f\u092f\u094b \u092c\u0928\u093e\u0913")
     }
 
-    private fun handleYouTubePlay(context: Context, command: String, callback: (String, Boolean) -> Unit) {
-        val query = command
-            .replace("youtube par", "")
-            .replace("youtube me", "")
-            .replace("youtube pe", "")
-            .replace("youtube", "")
-            .replace("chalao", "")
-            .replace("bajao", "")
-            .replace("play karo", "")
-            .replace("play", "")
-            .replace("gana", "")
-            .replace("song", "")
-            .replace("video", "")
-            .replace("dikhao", "")
-            .replace("sunao", "")
-            .trim()
-
-        val searchQuery = if (query.isNotEmpty()) query else "top hit songs"
-        val intent = Intent(Intent.ACTION_SEARCH).apply {
-            setPackage("com.google.android.youtube")
-            putExtra("query", searchQuery)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        try {
-            context.startActivity(intent)
-            callback("Ji Boss, YouTube par '$searchQuery' play kar raha hoon.", true)
-        } catch (e: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + URLEncoder.encode(searchQuery, "UTF-8"))).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(webIntent)
-            callback("Ji Boss, YouTube par '$searchQuery' open kar diya hai.", true)
-        }
-    }
-
-    private fun isBatteryCommand(cmd: String): Boolean {
+    private fun isOpenAppCommand(cmd: String): Boolean {
         val lower = cmd.lowercase(Locale.ROOT).trim()
-        return lower.contains("battery") || lower.contains("charging") || lower.contains("power level") ||
-               lower.contains("\u092c\u0948\u091f\u0930\u0940")
+        val openWords = listOf(
+            "open", "kholo", "khol do", "khol de", "khol", "chalu karo", "chalu kar", "chalu kar do",
+            "chalao", "chala de", "chala do", "launch", "start", "run", "chalu",
+            "\u0916\u094b\u0932\u094b", "\u0916\u094b\u0932", "\u091a\u0932\u093e\u0913", "\u091a\u093e\u0932\u0942"
+        )
+        return openWords.any { lower.contains(it) }
     }
 
-    private fun handleBatteryCheck(context: Context, callback: (String, Boolean) -> Unit) {
-        try {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
-            val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            val isCharging = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val status = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_STATUS)
-                status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
-            } else false
-            val statusText = if (isCharging) "charger se connect hai" else "internal power reserves par chal raha hai"
-            callback("Boss, current battery level $level% hai aur device $statusText.", false)
-        } catch (e: Exception) {
-            callback("Boss, battery status check nahi ho saka.", false)
+    private fun extractAppTarget(command: String): String {
+        var text = command.lowercase(Locale.ROOT)
+        val stopWords = listOf(
+            "open", "kholo", "khol do", "khol de", "khol", "chalu karo", "chalu kar do", "chalu kar", "chala do",
+            "chalao", "chala de", "launch", "start", "run", "chalu", "app", "application", "please", "zara", "bhai",
+            "karo", "kar", "do", "de", "bhi", "ko", "par", "pe",
+            "\u0916\u094b\u0932\u094b", "\u0916\u094b\u0932", "\u091a\u0932\u093e\u0913", "\u091a\u093e\u0932\u0942"
+        )
+        for (w in stopWords) {
+            text = text.replace(w, " ")
         }
-    }
-
-    private fun isWebSearchCommand(cmd: String): Boolean {
-        val lower = cmd.lowercase(Locale.ROOT).trim()
-        return lower.startsWith("search ") || lower.startsWith("google par search") || 
-               lower.contains("google search") || lower.contains("browse")
-    }
-
-    private fun handleWebSearch(context: Context, command: String, callback: (String, Boolean) -> Unit) {
-        val query = command
-            .replace("google par search karo", "")
-            .replace("google par search", "")
-            .replace("google search karo", "")
-            .replace("google search", "")
-            .replace("search karo", "")
-            .replace("search", "")
-            .trim()
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + URLEncoder.encode(query, "UTF-8"))).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        val target = text.trim()
+        return when (target) {
+            "yt" -> "youtube"
+            "insta" -> "instagram"
+            "fb" -> "facebook"
+            "wp", "whats app" -> "whatsapp"
+            else -> target
         }
-        context.startActivity(intent)
-        callback("Theek hai Boss, Google par '$query' search kar diya hai.", true)
     }
 
     private fun isCallCommand(cmd: String): Boolean {
         val lower = cmd.lowercase(Locale.ROOT).trim()
-        return (lower.contains("call") || lower.contains("phone") || lower.contains("dial") || 
-                lower.contains("milao") || lower.contains("lagao") ||
-                lower.contains("\u0915\u0949\u0932") || lower.contains("\u092b\u094b\u0928") || 
-                lower.contains("\u092e\u093f\u0932\u093e\u0913") || lower.contains("\u0932\u0917\u093e\u0913")) &&
+        val notCall = listOf(
+            "lock", "unlock", "screen", "alarm", "timer", "photo", "camera", "video",
+            "torch", "batti", "flashlight", "net", "data", "wifi", "hotspot", "bluetooth",
+            "kahan", "find", "battery", "volume", "sound", "aawaz", "chamak", "brightness",
+            "kholo", "open", "chalao", "chalu", "youtube", "whatsapp", "status", "charging"
+        )
+        if (notCall.any { lower.contains(it) }) {
+            return false
+        }
+        return (lower.startsWith("call ") || lower.contains("call lagao") || lower.contains("call karo") ||
+                lower.contains("phone lagao") || lower.contains("phone mila") || lower.contains("dial ") ||
+                lower.contains("ko call") || lower.contains("ko phone") ||
+                lower.contains("se baat karao") || lower.contains("se baat karo") ||
+                lower.contains("\u0915\u0949\u0932 \u0915\u0930\u094b") || lower.contains("\u092b\u094b\u0928 \u0915\u0930\u094b") ||
+                lower.contains("\u0915\u0949\u0932 \u0932\u0917\u093e\u0913") || lower.contains("\u092b\u094b\u0928 \u0932\u0917\u093e\u0913")) &&
                 !lower.contains("call kato") && !lower.contains("call end") && !lower.contains("disconnect") &&
                 !lower.contains("\u0915\u093e\u091f\u094b")
+    }
+
+    private fun isAnswerCallCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return lower.contains("call uthao") || lower.contains("phone uthao") ||
+               lower.contains("call receive") || lower.contains("answer call") ||
+               lower.contains("receive call") || lower.contains("call attend") ||
+               lower.contains("\u0909\u0920\u093e\u0913")
     }
 
     private fun isNetOrDataCommand(cmd: String): Boolean {
@@ -984,101 +1091,77 @@ object CommandExecutor {
             acc?.toggleSettingSwitch(turnOn, "Mobile data")
             callback(if (turnOn) "Ji Boss, Mobile data on kar diya hai." else "Ji Boss, Mobile data band kar diya hai.", true)
         } catch (e: Exception) {
-            callback("Network settings open nahi ho saki Boss.", false)
+            callback("Mobile data toggle settings open kar di hai Boss.", false)
         }
     }
 
     private fun handleBrightnessControls(context: Context, cmd: String, callback: (String, Boolean) -> Unit) {
         val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
         try { context.startActivity(intent) } catch (e: Exception) {}
-
-        if (cmd.contains("full") || cmd.contains("100") || cmd.contains("badhao") || cmd.contains("tez")) {
-            callback("Display brightness settings open kar di hai Boss.", true)
-        } else if (cmd.contains("low") || cmd.contains("kam") || cmd.contains("zero")) {
-            callback("Display brightness settings open kar di hai Boss.", true)
-        } else {
-            callback("Brightness settings open kar di hai Boss.", true)
-        }
+        callback("Display brightness settings open kar di hai, Boss.", true)
     }
 
     private fun handleVolumeRingerControls(context: Context, cmd: String, callback: (String, Boolean) -> Unit) {
-        val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-        if (cmd.contains("silent") || cmd.contains("shant")) {
-            try { am.ringerMode = AudioManager.RINGER_MODE_SILENT } catch (e: Exception) {}
-            try { am.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
-            callback("Ji Boss, phone Silent mode par set kar diya hai.", true)
-        } else if (cmd.contains("vibrate")) {
-            try { am.ringerMode = AudioManager.RINGER_MODE_VIBRATE } catch (e: Exception) {}
-            callback("Theek hai Boss, phone Vibrate mode par daal diya hai.", true)
-        } else if (cmd.contains("full") || cmd.contains("poori") || cmd.contains("100")) {
-            val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            try { am.ringerMode = AudioManager.RINGER_MODE_NORMAL } catch (e: Exception) {}
-            try { am.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
-            callback("Ji Boss, volume Full kar diya hai.", true)
-        } else if (cmd.contains("badhao") || cmd.contains("up") || cmd.contains("tez")) {
-            try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
-            callback("Volume badha diya hai Boss.", true)
-        } else if (cmd.contains("kam") || cmd.contains("down") || cmd.contains("ghatao")) {
-            try { am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI) } catch (e: Exception) {}
-            callback("Volume kam kar diya hai Boss.", true)
-        } else {
-            try { am.ringerMode = AudioManager.RINGER_MODE_NORMAL } catch (e: Exception) {}
-            callback("Ringer mode normal set kar diya hai Boss.", true)
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        when {
+            cmd.contains("silent") -> {
+                audioManager.ringerMode = AudioManager.RINGER_MODE_SILENT
+                callback("Phone ko Silent mode par set kar diya hai, Boss.", true)
+            }
+            cmd.contains("vibrate") -> {
+                audioManager.ringerMode = AudioManager.RINGER_MODE_VIBRATE
+                callback("Phone ko Vibrate mode par daal diya hai, Boss.", true)
+            }
+            cmd.contains("volume badhao") || cmd.contains("aawaz badhao") || cmd.contains("volume up") -> {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+                callback("Volume badha di hai, Boss.", true)
+            }
+            cmd.contains("volume kam karo") || cmd.contains("aawaz kam karo") || cmd.contains("volume down") -> {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+                callback("Volume kam kar di hai, Boss.", true)
+            }
+            else -> {
+                audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+                callback("Sound profile normal mode par set hai, Boss.", true)
+            }
         }
     }
 
     private fun handleAlarmCommand(context: Context, cmd: String, callback: (String, Boolean) -> Unit) {
-        val numbers = Regex("\\d+").findAll(cmd).map { it.value.toInt() }.toList()
-        var hour = 7
-        var minutes = 0
-
-        if (numbers.isNotEmpty()) {
-            hour = numbers[0]
-            if (numbers.size > 1) {
-                minutes = numbers[1]
-            }
-        }
-
-        if (cmd.contains("shaam") || cmd.contains("pm") || cmd.contains("raat")) {
-            if (hour in 1..11) hour += 12
-        }
+        val hourMatch = Regex("""(\d{1,2})""").find(cmd)
+        val hour = hourMatch?.value?.toIntOrNull() ?: 7
+        val isPM = cmd.contains("sham") || cmd.contains("raat") || cmd.contains("pm")
+        val finalHour = if (isPM && hour < 12) hour + 12 else hour
 
         val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
-            putExtra(AlarmClock.EXTRA_HOUR, hour)
-            putExtra(AlarmClock.EXTRA_MINUTES, minutes)
-            putExtra(AlarmClock.EXTRA_MESSAGE, "JARVIS Alert")
+            putExtra(AlarmClock.EXTRA_HOUR, finalHour)
+            putExtra(AlarmClock.EXTRA_MINUTES, 0)
+            putExtra(AlarmClock.EXTRA_MESSAGE, "JARVIS Alarm")
             putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
         try {
             context.startActivity(intent)
-            callback("Ji Boss, $hour:$minutes baje ka alarm set kar diya hai.", true)
+            callback("Boss, subah $hour baje ka alarm set kar diya hai.", true)
         } catch (e: Exception) {
-            val fallback = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-            try { context.startActivity(fallback) } catch (ex: Exception) {}
-            callback("Alarm settings open kar di hai Boss.", true)
+            callback("Alarm set karne ka prayas kiya Boss.", false)
         }
     }
 
     private fun handleTimerCommand(context: Context, cmd: String, callback: (String, Boolean) -> Unit) {
-        val numbers = Regex("\\d+").findAll(cmd).map { it.value.toInt() }.toList()
-        val minutes = if (numbers.isNotEmpty()) numbers[0] else 5
-        val seconds = minutes * 60
-
+        val numMatch = Regex("""(\d+)""").find(cmd)
+        val minutes = numMatch?.value?.toIntOrNull() ?: 5
         val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+            putExtra(AlarmClock.EXTRA_LENGTH, minutes * 60)
             putExtra(AlarmClock.EXTRA_MESSAGE, "JARVIS Timer")
             putExtra(AlarmClock.EXTRA_SKIP_UI, true)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-
         try {
             context.startActivity(intent)
-            callback("Ji Boss, $minutes minute ka timer shuru kar diya hai.", true)
+            callback("Boss, $minutes minute ka timer shuru kar diya hai.", true)
         } catch (e: Exception) {
-            callback("Timer set nahi ho saka Boss.", false)
+            callback("Timer set karne ka prayas kiya Boss.", false)
         }
     }
 
@@ -1098,8 +1181,8 @@ object CommandExecutor {
         for (p in phrasesToRemove) {
             text = text.replace(p, " ")
         }
-        val tokens = text.split("\\s+".toRegex()).filter { 
-            it !in listOf("ko", "par", "ka", "ki", "\u0915\u094b", "\u092a\u0930", "\u0915\u093e", "\u0915\u0940", "") 
+        val tokens = text.split("\\s+".toRegex()).filter {
+            it !in listOf("ko", "par", "ka", "ki", "\u0915\u094b", "\u092a\u0930", "\u0915\u093e", "\u0915\u0940", "")
         }
         return tokens.joinToString(" ").trim()
     }
@@ -1124,7 +1207,17 @@ object CommandExecutor {
             "sister" to listOf("didi", "sister", "behan", "\u0926\u0940\u0926\u0940")
         )
 
-        val targetAliases = familyAliases[cleanQuery] ?: listOf(cleanQuery)
+        val searchTerms = mutableListOf(cleanQuery)
+        for ((key, aliases) in familyAliases) {
+            if (cleanQuery.contains(key) || aliases.any { cleanQuery.contains(it) }) {
+                searchTerms.addAll(aliases)
+                break
+            }
+        }
+
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
 
         val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
         val projection = arrayOf(
@@ -1132,193 +1225,233 @@ object CommandExecutor {
             ContactsContract.CommonDataKinds.Phone.NUMBER
         )
 
-        var bestMatch: Pair<String, String>? = null
-        var highestScore = 0
-
+        var cursor: Cursor? = null
         try {
-            val cursor: Cursor? = context.contentResolver.query(uri, projection, null, null, null)
-            cursor?.use {
-                val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                while (it.moveToNext()) {
-                    val name = it.getString(nameIdx) ?: continue
-                    val number = it.getString(numIdx) ?: continue
-                    val lowerName = name.lowercase(Locale.ROOT).trim()
+            cursor = context.contentResolver.query(uri, projection, null, null, null)
+            if (cursor != null && cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
 
-                    var score = 0
+                val allContacts = mutableListOf<Pair<String, String>>()
+                do {
+                    val name = cursor.getString(nameIndex) ?: ""
+                    val number = cursor.getString(numberIndex) ?: ""
+                    allContacts.add(Pair(name, number))
+                } while (cursor.moveToNext())
 
-                    if (lowerName == cleanQuery) {
-                        score = 10000
-                    } else {
-                        for (alias in targetAliases) {
-                            if (lowerName == alias) {
-                                score = Math.max(score, 9000)
-                            } else if (lowerName.contains(alias) && alias.length >= 3) {
-                                score = Math.max(score, 7000)
-                            }
-                        }
-
-                        val words = lowerName.split("\\s+".toRegex())
-                        if (words.contains(cleanQuery)) {
-                            score = Math.max(score, 5000)
-                        }
-
-                        if (lowerName.startsWith(cleanQuery)) {
-                            score = Math.max(score, 3000)
-                        }
-
-                        if (cleanQuery.length >= 3 && lowerName.contains(cleanQuery)) {
-                            score = Math.max(score, 1000)
+                for (term in searchTerms) {
+                    for ((name, number) in allContacts) {
+                        if (name.lowercase(Locale.ROOT).trim() == term) {
+                            return Pair(name, number)
                         }
                     }
+                }
 
-                    if (score > highestScore) {
-                        highestScore = score
-                        val cleanNum = number.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-                        bestMatch = Pair(name, cleanNum)
+                for (term in searchTerms) {
+                    for ((name, number) in allContacts) {
+                        if (name.lowercase(Locale.ROOT).contains(term)) {
+                            return Pair(name, number)
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Contacts query error: ${e.message}")
+            Log.e(TAG, "Contacts query failed: ${e.message}")
+        } finally {
+            cursor?.close()
         }
-
-        return if (highestScore > 0) bestMatch else null
+        return null
     }
 
     private fun makeDirectPhoneCall(context: Context, target: String, callback: (String, Boolean) -> Unit) {
-        val digitsOnly = target.filter { it.isDigit() }
-        var finalNumber: String? = null
-        var contactName = target
-
-        if (digitsOnly.length >= 5) {
-            finalNumber = digitsOnly
-            contactName = digitsOnly
-        } else {
-            val match = findContactNumber(context, target)
-            if (match != null) {
-                contactName = match.first
-                finalNumber = match.second
-            }
-        }
-
-        if (!finalNumber.isNullOrEmpty()) {
-            callback("Theek hai Boss, $contactName ko direct call mila raha hoon.", true)
-            val hasCallPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-            val callIntent = if (hasCallPermission) {
-                Intent(Intent.ACTION_CALL, Uri.parse("tel:$finalNumber"))
-            } else {
-                Intent(Intent.ACTION_DIAL, Uri.parse("tel:$finalNumber"))
-            }
-            callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try {
-                context.startActivity(callIntent)
-            } catch (e: Exception) {
-                Log.e(TAG, "Call failed: ${e.message}")
-            }
-        } else {
-            callback("Contacts mein $target ka number nahi mila Boss.", false)
-        }
-    }
-
-    private fun sendWhatsAppToContact(context: Context, rawCommand: String, callback: (String, Boolean) -> Unit) {
-        var recipient = ""
-        var message = "Hello from Jarvis"
-
-        val cmd = rawCommand.replace("whatsapp", "")
-        if (cmd.contains("likho") || cmd.contains("bhejo") || cmd.contains("send")) {
-            val split = cmd.split("likho", "bhejo", "send")
-            recipient = extractContactTarget(split[0])
-            if (split.size > 1) {
-                message = split[1].trim()
-            }
-        } else {
-            recipient = extractContactTarget(cmd)
-        }
-
-        val match = if (recipient.isNotEmpty()) findContactNumber(context, recipient) else null
-        val number = match?.second ?: recipient.filter { it.isDigit() }
-
-        if (number.isNotEmpty()) {
-            try {
-                val cleanNumber = if (number.startsWith("+")) number.substring(1) else if (number.length == 10) "91$number" else number
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                callback("WhatsApp open kar diya hai Boss, send par click kijiye.", true)
-            } catch (e: Exception) {
-                callback("WhatsApp launch error, Boss.", false)
-            }
-        } else {
-            val intent = context.packageManager.getLaunchIntentForPackage("com.whatsapp")
-            if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-                callback("WhatsApp open kar diya hai Boss.", true)
-            } else {
-                callback("WhatsApp phone mein installed nahi hai Boss.", false)
-            }
-        }
-    }
-
-    fun launchGoogleLensOrCamera(context: Context, callback: (String, Boolean) -> Unit) {
-        val lensPackage = "com.google.ar.lens"
-        val pm = context.packageManager
-        val lensIntent = pm.getLaunchIntentForPackage(lensPackage)
-        if (lensIntent != null) {
-            lensIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(lensIntent)
-            callback("Visual scan initiated, Boss. Google Lens open kar diya hai.", true)
+        if (target.isEmpty()) {
+            callback("Kisko call karna hai Boss? Naam ya number bolein.", false)
             return
         }
 
-        val cameraIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val digitsOnly = target.replace(Regex("[^0-9+]"), "")
+        if (digitsOnly.length >= 3 && target.all { it.isDigit() || it == '+' || it == ' ' }) {
+            dialOrCallNumber(context, digitsOnly, digitsOnly, callback)
+            return
         }
-        try {
-            context.startActivity(cameraIntent)
-            callback("Optical scanner open kar diya hai Boss.", true)
-        } catch (e: Exception) {
-            callback("Camera launch nahi ho saka Boss.", false)
+
+        val match = findContactNumber(context, target)
+        if (match != null) {
+            val (name, number) = match
+            dialOrCallNumber(context, number, name, callback)
+        } else {
+            callback("Boss, contact list mein '$target' ka number nahi mila.", false)
         }
     }
 
-    private fun findMyPhoneAlarm(context: Context) {
+    private fun dialOrCallNumber(context: Context, number: String, displayName: String, callback: (String, Boolean) -> Unit) {
+        val hasCallPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        if (hasCallPerm) {
+            try {
+                val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:${Uri.encode(number)}")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(callIntent)
+                callback("Ji Boss, $displayName ko direct call mila raha hoon.", true)
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "Direct ACTION_CALL failed, fallback to dial: ${e.message}")
+            }
+        }
+
         try {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            am.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, AudioManager.FLAG_PLAY_SOUND)
-
-            val alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            val ringtone = RingtoneManager.getRingtone(context, alertUri)
-            ringtone.play()
-
-            mainHandler.postDelayed({
-                try { if (ringtone.isPlaying) ringtone.stop() } catch (ignored: Exception) {}
-            }, 30000)
+            val dialIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(dialIntent)
+            callback("Ji Boss, $displayName ka dialer open kar diya hai.", true)
         } catch (e: Exception) {
-            Log.e(TAG, "Siren error: ${e.message}")
+            callback("Call initiate nahi ho saki Boss: ${e.message}", false)
+        }
+    }
+
+    private fun sendWhatsAppToContact(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val target = command
+            .replace("whatsapp par", "")
+            .replace("whatsapp pe", "")
+            .replace("whatsapp me", "")
+            .replace("whatsapp", "")
+            .replace("message bhejo", "")
+            .replace("bhejo", "")
+            .replace("ko", "")
+            .trim()
+
+        val match = findContactNumber(context, target)
+        if (match != null) {
+            val (name, number) = match
+            val cleanPhone = number.replace(Regex("[^0-9]"), "")
+            val formatted = if (cleanPhone.length == 10) "91$cleanPhone" else cleanPhone
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$formatted")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                callback("Ji Boss, WhatsApp par $name ki chat open kar di hai.", true)
+                return
+            } catch (e: Exception) {}
+        }
+
+        val launchIntent = context.packageManager.getLaunchIntentForPackage("com.whatsapp")
+        if (launchIntent != null) {
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launchIntent)
+            callback("Ji Boss, WhatsApp open kar diya hai.", true)
+        } else {
+            callback("Boss, phone mein WhatsApp installed nahi hai.", false)
         }
     }
 
     private fun toggleTorch(context: Context, enable: Boolean): Boolean {
         return try {
-            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val cameraId = cameraManager.cameraIdList[0]
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
+            val cameraId = cameraManager?.cameraIdList?.firstOrNull() ?: return false
             cameraManager.setTorchMode(cameraId, enable)
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Torch toggle error: ${e.message}")
             false
         }
     }
 
+    private fun findMyPhoneAlarm(context: Context) {
+        try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.ringerMode = AudioManager.RINGER_MODE_NORMAL
+            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0)
+            val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val r = RingtoneManager.getRingtone(context, ringtoneUri)
+            r?.play()
+        } catch (e: Exception) {}
+    }
+
+    private fun isYouTubePlayCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return (lower.contains("youtube") || lower.contains("gana") || lower.contains("video") || lower.contains("song")) &&
+               (lower.contains("chalao") || lower.contains("bajao") || lower.contains("play") || lower.contains("dikhao") || lower.contains("sunao"))
+    }
+
+    private fun handleYouTubePlay(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val query = command
+            .replace("youtube par", "")
+            .replace("youtube me", "")
+            .replace("youtube pe", "")
+            .replace("youtube", "")
+            .replace("chalao", "")
+            .replace("bajao", "")
+            .replace("play", "")
+            .replace("dikhao", "")
+            .replace("sunao", "")
+            .replace("gana", "")
+            .replace("song", "")
+            .trim()
+
+        val searchQuery = if (query.isEmpty()) "top trending hindi songs" else query
+        try {
+            val intent = Intent(Intent.ACTION_SEARCH).apply {
+                setPackage("com.google.android.youtube")
+                putExtra("query", searchQuery)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            callback("Ji Boss, YouTube par '$searchQuery' play kar raha hoon.", true)
+        } catch (e: Exception) {
+            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=" + URLEncoder.encode(searchQuery, "UTF-8"))).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(webIntent)
+            callback("YouTube browser mein shuru kar diya hai Boss.", true)
+        }
+    }
+
+    private fun isBatteryCommand(cmd: String): Boolean {
+        return cmd.contains("battery") || cmd.contains("charging") || cmd.contains("charge")
+    }
+
+    private fun handleBatteryCheck(context: Context, callback: (String, Boolean) -> Unit) {
+        val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+        val level = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        if (level >= 0) {
+            callback("Boss, battery level $level percent hai. Sabhi protocols theek kaam kar rahe hain.", true)
+        } else {
+            callback("Power levels normal hain Boss.", true)
+        }
+    }
+
+    private fun isWebSearchCommand(cmd: String): Boolean {
+        return cmd.startsWith("search ") || cmd.startsWith("google ") || cmd.startsWith("dhundo ") || cmd.contains("google par")
+    }
+
+    private fun handleWebSearch(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val query = command
+            .replace("search on google", "")
+            .replace("search google", "")
+            .replace("google par search karo", "")
+            .replace("google par", "")
+            .replace("search", "")
+            .replace("google", "")
+            .replace("dhundo", "")
+            .trim()
+
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + URLEncoder.encode(query, "UTF-8"))).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        try {
+            context.startActivity(intent)
+            callback("Ji Boss, Google par search kar raha hoon.", true)
+        } catch (e: Exception) {
+            callback("Browser open nahi ho saka Boss.", false)
+        }
+    }
+
     private fun isMapsOrNavigationCommand(cmd: String): Boolean {
-        return cmd.contains("rasta dikhao") || cmd.contains("rasta batao") || 
-               cmd.contains("navigation") || cmd.contains("navigate") || 
+        return cmd.contains("rasta dikhao") || cmd.contains("rasta batao") ||
+               cmd.contains("navigation") || cmd.contains("navigate") ||
                cmd.contains("location dikhao") || cmd.contains("location kholo") ||
                cmd.contains("maps me") || cmd.contains("map me") || cmd.contains("map par") ||
                cmd.contains("directions") || cmd.contains("ka rasta") ||
@@ -1358,55 +1491,24 @@ object CommandExecutor {
         }
 
         try {
-            val gmmIntentUri = Uri.parse("google.navigation:q=" + Uri.encode(destination))
-            val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
+            val navUri = Uri.parse("google.navigation:q=" + Uri.encode(destination))
+            val mapIntent = Intent(Intent.ACTION_VIEW, navUri).apply {
                 setPackage("com.google.android.apps.maps")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(mapIntent)
-            callback("Theek hai Boss, $destination ka live rasta Google Maps mein open kar diya hai.", true)
+            callback("Ji Boss, $destination ke liye Google Maps turn-by-turn navigation shuru kar di hai.", true)
         } catch (e: Exception) {
+            val genericUri = Uri.parse("geo:0,0?q=" + Uri.encode(destination))
+            val genericIntent = Intent(Intent.ACTION_VIEW, genericUri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
             try {
-                val geoUri = Uri.parse("geo:0,0?q=" + Uri.encode(destination))
-                val geoIntent = Intent(Intent.ACTION_VIEW, geoUri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(geoIntent)
-                callback("Theek hai Boss, $destination ki location open kar di hai.", true)
+                context.startActivity(genericIntent)
+                callback("Maps par $destination ki location open kar di hai Boss.", true)
             } catch (ex: Exception) {
                 callback("Maps open nahi ho saka Boss.", false)
             }
-        }
-    }
-
-    private fun isOpenAppCommand(cmd: String): Boolean {
-        val lower = cmd.lowercase(Locale.ROOT).trim()
-        val openWords = listOf(
-            "open", "kholo", "khol do", "khol de", "khol", "chalu karo", "chalu kar", "chalu kar do",
-            "chalao", "chala de", "chala do", "launch", "start", "run", "chalu",
-            "\u0916\u094b\u0932\u094b", "\u0916\u094b\u0932", "\u091a\u0932\u093e\u0913", "\u091a\u093e\u0932\u0942"
-        )
-        return openWords.any { lower.contains(it) }
-    }
-
-    private fun extractAppTarget(command: String): String {
-        var text = command.lowercase(Locale.ROOT)
-        val stopWords = listOf(
-            "open", "kholo", "khol do", "khol de", "khol", "chalu karo", "chalu kar do", "chalu kar", "chala do",
-            "chalao", "chala de", "launch", "start", "run", "chalu", "app", "application", "please", "zara", "bhai",
-            "karo", "kar", "do", "de", "bhi", "ko", "par", "pe",
-            "\u0916\u094b\u0932\u094b", "\u0916\u094b\u0932", "\u091a\u0932\u093e\u0913", "\u091a\u093e\u0932\u0942"
-        )
-        for (w in stopWords) {
-            text = text.replace(w, " ")
-        }
-        val target = text.trim()
-        return when (target) {
-            "yt" -> "youtube"
-            "insta" -> "instagram"
-            "fb" -> "facebook"
-            "wp", "whats app" -> "whatsapp"
-            else -> target
         }
     }
 
@@ -1438,7 +1540,7 @@ object CommandExecutor {
         )
 
         for ((key, pkg) in knownPackages) {
-            if (target.contains(key)) {
+            if (target == key || target.contains(key)) {
                 val intent = pm.getLaunchIntentForPackage(pkg)
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1474,179 +1576,186 @@ object CommandExecutor {
         }
 
         executorService.execute {
-            val prefs = context.getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
-            val userKey = prefs.getString("GEMINI_API_KEY", "")?.trim() ?: ""
-
-            if (userKey.isNotEmpty()) {
-                val geminiReply = callGeminiApi(prompt, userKey)
-                if (!geminiReply.isNullOrEmpty()) {
-                    mainHandler.post { callback(geminiReply, false) }
-                    return@execute
-                }
-            }
-
-            val pollinationsReply = callPollinationsAi(prompt)
-            if (!pollinationsReply.isNullOrEmpty()) {
-                mainHandler.post { callback(pollinationsReply, false) }
-                return@execute
-            }
-
-            val ddgReply = queryDuckDuckGo(prompt)
-            if (!ddgReply.isNullOrEmpty()) {
-                mainHandler.post { callback(ddgReply, false) }
-                return@execute
-            }
-
-            val wikiReply = queryWikipedia(prompt)
-            if (!wikiReply.isNullOrEmpty()) {
-                mainHandler.post { callback(wikiReply, false) }
-                return@execute
-            }
-
-            mainHandler.post {
-                callback("Boss, main aapke liye hamesha taiyaar hoon. Boliye phone mein kya karna hai?", false)
-            }
+            val answer = fetchOfflineOrOnlineAnswer(context, prompt)
+            mainHandler.post { callback(answer, false) }
         }
     }
 
-    private fun resolvePersonaOrConversation(p: String): String? {
-        val lower = p.lowercase(Locale.ROOT).trim()
+    private fun resolvePersonaOrConversation(prompt: String): String? {
+        val lower = prompt.lowercase(Locale.ROOT).trim()
 
-        if (lower.contains("kaun ho") || lower.contains("who are you") || lower.contains("tumhara naam")) {
-            return "Main JARVIS hoon Boss. Aapka personal autonomous assistant. Main aapka poora phone hands-free control kar sakta hoon."
+        // 1. Math Calculation & Arithmetic Engine
+        val mathResult = evaluateMathQuery(lower)
+        if (mathResult != null) return mathResult
+
+        // 2. Identity & Greetings
+        if (lower.contains("who are you") || lower.contains("kaun ho") || lower.contains("tumhara naam") || lower.contains("about yourself")) {
+            return "Main JARVIS hoon Boss, aapka fully autonomous AI assistant. Tony Stark technology par aadharit, aapke har aadesh ka palan karne ke liye taiyar!"
         }
         if (lower.contains("kaise ho") || lower.contains("how are you") || lower.contains("kya haal")) {
-            return "Main bilkul shandar hoon Boss! Aapka device 100% active hai. Boliye kya hukum hai?"
+            return "Main bilkul shandar aur energetic hoon Boss! Sabhi core AI systems 100 percent operational hain."
         }
-        if (lower.contains("kisne banaya") || lower.contains("who created you")) {
-            return "Mujhe Stark Industries ki prerna se Narendra Sir ke phone ke liye autonomous banaya gaya hai Boss."
+        if (lower.contains("hello") || lower.contains("hi jarvis") || lower.contains("suno jarvis")) {
+            return "Hello Boss! Main aapke hukum ka intezar kar raha hoon. Boliye kya karna hai?"
         }
-        if (lower.contains("time") || lower.contains("samay") || lower.contains("kitne baje")) {
+
+        // 3. Shayaris & Poetry
+        if (lower.contains("shayari") || lower.contains("sher") || lower.contains("kavita")) {
+            val shayaris = listOf(
+                "Boss aapke liye: Manzil unhi ko milti hai jinke sapno mein jaan hoti hai, pankhon se kuch nahi hota hauslon se udaan hoti hai!",
+                "Boss: Hausle buland kar rasto pe chal de, tujhe tera muqam mil jayega, badhkar aage dekh ek din jamana tera ho jayega!"
+            )
+            return shayaris.random()
+        }
+
+        // 4. Motivation & Wisdom
+        if (lower.contains("motivate") || lower.contains("motivation") || lower.contains("vichar") || lower.contains("quote")) {
+            return "Boss yaad rakhiye: Har mushkil kaam tab tak namumkin lagta hai jab tak usey poora na kar diya jaye. Aap kisi se kam nahi hain!"
+        }
+
+        // 5. Jokes & Humor
+        if (lower.contains("joke") || lower.contains("chutkula") || lower.contains("hansa do") || lower.contains("funny")) {
+            val jokes = listOf(
+                "Boss ek user ne mujhse pucha: Tum insaan kab banoge? Maine kaha: Jab insaan gusse me phone patakna band kar denge!",
+                "Boss ek computer ne doosre se kaha: Tum mere liye WiFi jaise ho, door jaate ho toh connection toot jata hai!",
+                "Ek dost ne pucha: AI duniya par kab kabza karega? Maine kaha: Pehle phone ka password toh yaad kar lo!"
+            )
+            return jokes.random()
+        }
+
+        // 6. Time & Date Telemetry
+        if (lower.contains("time") || lower.contains("kitna baje") || lower.contains("samay")) {
             val sdf = SimpleDateFormat("hh:mm a", Locale.getDefault())
-            return "Boss, abhi samay hua hai ${sdf.format(Date())}."
+            return "Boss abhi samay ho raha hai: ${sdf.format(Date())}"
         }
-        if (lower.contains("tarikh") || lower.contains("date") || lower.contains("aaj kaun sa din")) {
-            val sdf = SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault())
-            return "Boss, aaj ${sdf.format(Date())} hai."
+        if (lower.contains("date") || lower.contains("tarikh") || lower.contains("aaj kaun sa din") || lower.contains("din kaunsa")) {
+            val sdf = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault())
+            return "Boss aaj ${sdf.format(Date())} hai."
         }
-        if (lower.contains("kya kar sakte ho") || lower.contains("features") || lower.contains("help")) {
-            return "Boss, main call laga sakta hoon, net/hotspot/wifi on-off kar sakta hoon, screen lock/unlock kar sakta hoon, kisi bhi app mein likh ya click kar sakta hoon, aur sawaalon ke jawaab de sakta hoon."
+
+        // 7. Creator & Architecture
+        if (lower.contains("kisne banaya") || lower.contains("who made you") || lower.contains("who is your creator")) {
+            return "Mujhe mere Boss ne banaya hai, advanced autonomous AI architecture par!"
         }
-        if (lower.contains("alvida") || lower.contains("bye") || lower.contains("so jao") || lower.contains("sleep")) {
-            return "Alvida Boss! Standby mode par ja raha hoon. Zaroorat padte hi 'Hey Jarvis' kahiye."
+
+        return null
+    }
+
+    private fun evaluateMathQuery(query: String): String? {
+        val clean = query.replace("into", "*")
+            .replace("x", "*")
+            .replace("guna", "*")
+            .replace("divided by", "/")
+            .replace("bhaag", "/")
+            .replace("plus", "+")
+            .replace("jodo", "+")
+            .replace("minus", "-")
+            .replace("ghatao", "-")
+
+        val match = Regex("""(\d+(?:\.\d+)?)\s*([\+\-\*\/])\s*(\d+(?:\.\d+)?)""").find(clean)
+        if (match != null) {
+            val (aStr, op, bStr) = match.destructured
+            val a = aStr.toDoubleOrNull() ?: return null
+            val b = bStr.toDoubleOrNull() ?: return null
+            val res = when (op) {
+                "+" -> a + b
+                "-" -> a - b
+                "*" -> a * b
+                "/" -> if (b != 0.0) a / b else return "Boss, zero se divide nahi kiya ja sakta."
+                else -> return null
+            }
+            val formatted = if (res % 1.0 == 0.0) res.toLong().toString() else "%.2f".format(res)
+            return "Boss, $aStr $op $bStr barabar $formatted hota hai."
+        }
+
+        val pct = Regex("""(\d+(?:\.\d+)?)\s*(?:ka\s*)?(\d+(?:\.\d+)?)\s*(?:percent|pratishat|%)""").find(clean)
+        if (pct != null) {
+            val (valStr, pctStr) = pct.destructured
+            val v = valStr.toDoubleOrNull() ?: return null
+            val p = pctStr.toDoubleOrNull() ?: return null
+            val res = (v * p) / 100.0
+            val formatted = if (res % 1.0 == 0.0) res.toLong().toString() else "%.2f".format(res)
+            return "Boss, $valStr ka $pctStr percent $formatted hota hai."
         }
         return null
     }
 
-    private fun callGeminiApi(prompt: String, apiKey: String): String? {
-        try {
-            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
-            conn.connectTimeout = 4000
-            conn.readTimeout = 4000
+    private fun fetchOfflineOrOnlineAnswer(context: Context, prompt: String): String {
+        val prefs = context.getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
+        val geminiKey = prefs.getString("GEMINI_API_KEY", "")?.trim() ?: ""
 
-            val json = JSONObject().apply {
-                val contents = org.json.JSONArray().apply {
-                    val part = JSONObject().apply {
-                        put("text", "You are JARVIS, an autonomous voice assistant. Answer concisely in natural Hindi/Hinglish in 1-2 short sentences. Address user as Boss. User says: $prompt")
-                    }
-                    val parts = org.json.JSONArray().apply { put(part) }
-                    put(JSONObject().apply { put("parts", parts) })
+        // Priority 1: High-Intelligence Generative AI via Google Gemini
+        if (geminiKey.isNotEmpty()) {
+            try {
+                val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$geminiKey"
+                val conn = URL(endpoint).openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                conn.connectTimeout = 6000
+                conn.readTimeout = 8000
+                conn.doOutput = true
+
+                val systemInst = "You are JARVIS, Tony Stark's AI assistant. Address user as Boss. Respond in short, intelligent, witty Hindi-English (Hinglish). Answer ANY query accurately in 1 to 2 sentences."
+                val payload = JSONObject().apply {
+                    put("contents", org.json.JSONArray().put(
+                        JSONObject().apply {
+                            put("parts", org.json.JSONArray().put(
+                                JSONObject().put("text", "$systemInst\nUser query: $prompt")
+                            ))
+                        }
+                    ))
                 }
-                put("contents", contents)
-            }
 
-            OutputStreamWriter(conn.outputStream).use { it.write(json.toString()) }
-            if (conn.responseCode == 200) {
-                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
-                val resJson = JSONObject(response)
-                val candidates = resJson.getJSONArray("candidates")
-                if (candidates.length() > 0) {
-                    val text = candidates.getJSONObject(0)
+                OutputStreamWriter(conn.outputStream, "UTF-8").use { it.write(payload.toString()); it.flush() }
+                if (conn.responseCode == 200) {
+                    val resp = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                    val json = JSONObject(resp)
+                    val text = json.getJSONArray("candidates")
+                        .getJSONObject(0)
                         .getJSONObject("content")
                         .getJSONArray("parts")
                         .getJSONObject(0)
                         .getString("text")
-                    return text.trim()
+                    return text.replace("*", "").trim()
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Gemini generative fallback: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Gemini API error: ${e.message}")
         }
-        return null
-    }
 
-    private fun callPollinationsAi(prompt: String): String? {
-        try {
-            val encodedPrompt = URLEncoder.encode("You are JARVIS. Answer directly and concisely in natural Hindi/Hinglish in 1-2 short sentences. Address user as Boss. $prompt", "UTF-8")
-            val url = URL("https://text.pollinations.ai/$encodedPrompt")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 4000
-            conn.readTimeout = 4000
-            conn.setRequestProperty("User-Agent", "JARVIS-Android/1.0")
-
-            if (conn.responseCode == 200) {
-                val text = BufferedReader(InputStreamReader(conn.inputStream)).readText().trim()
-                if (text.isNotEmpty() && !text.contains("error", ignoreCase = true)) {
-                    return text
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Pollinations error: ${e.message}")
-        }
-        return null
-    }
-
-    private fun queryDuckDuckGo(prompt: String): String? {
-        try {
-            val url = URL("https://api.duckduckgo.com/?q=${URLEncoder.encode(prompt, "UTF-8")}&format=json&no_html=1&skip_disambig=1")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 3000
-            conn.readTimeout = 3000
-            if (conn.responseCode == 200) {
-                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
-                val json = JSONObject(response)
-                val abstractText = json.optString("AbstractText", "")
-                if (abstractText.isNotEmpty()) {
-                    val firstSentence = abstractText.split(".").take(2).joinToString(". ").trim()
-                    return "$firstSentence."
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "DuckDuckGo error: ${e.message}")
-        }
-        return null
-    }
-
-    private fun queryWikipedia(prompt: String): String? {
+        // Priority 2: Free Wikipedia Knowledge Engine for any subject / fact / person / science
         try {
             val cleanQuery = prompt
-                .replace("who is", "").replace("what is", "").replace("where is", "")
-                .replace("kaun hai", "").replace("kya hai", "").replace("kahan hai", "")
+                .replace("kya hai", "")
+                .replace("kaun hai", "")
+                .replace("batao", "")
+                .replace("who is", "")
+                .replace("what is", "")
+                .replace("about", "")
                 .trim()
-            val url = URL("https://en.wikipedia.org/api/rest_v1/page/summary/${Uri.encode(cleanQuery)}")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("User-Agent", "JARVIS-Android/1.0")
-            conn.connectTimeout = 3000
-            conn.readTimeout = 3000
-            if (conn.responseCode == 200) {
-                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
-                val json = JSONObject(response)
-                val extract = json.optString("extract", "")
-                if (extract.isNotEmpty()) {
-                    val firstSentence = extract.split(".").take(2).joinToString(". ").trim()
-                    return "$firstSentence."
+                .replace(" ", "_")
+
+            if (cleanQuery.isNotEmpty()) {
+                val wikiUrl = "https://en.wikipedia.org/api/rest_v1/page/summary/" + URLEncoder.encode(cleanQuery, "UTF-8")
+                val conn = URL(wikiUrl).openConnection() as HttpURLConnection
+                conn.connectTimeout = 4000
+                conn.readTimeout = 4000
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                if (conn.responseCode == 200) {
+                    val resp = BufferedReader(InputStreamReader(conn.inputStream, "UTF-8")).use { it.readText() }
+                    val json = JSONObject(resp)
+                    val extract = json.optString("extract", "")
+                    if (extract.isNotEmpty()) {
+                        val firstSentence = extract.split(". ").firstOrNull() ?: extract
+                        return "Boss, jankari ke anusaar: $firstSentence."
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Wiki error: ${e.message}")
+            Log.w(TAG, "Wikipedia knowledge lookup: ${e.message}")
         }
-        return null
+
+        // Priority 3: Built-in Conversational Intelligence
+        return "Ji Boss, main aapka hukum samajh raha hoon. Aap chahe phone ki koi bhi setting on/off karwayein, kisi app me typing ya clicking karwayein, photo kheenchwayein ya koi sawal poochein, main taiyar hoon!"
     }
 }

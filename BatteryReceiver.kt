@@ -4,36 +4,41 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
-import android.os.Build
 
+/**
+ * Battery and Charging State Receiver.
+ * Silent and battery-friendly:
+ * Does NOT wake up speech recognizer on charger connect to prevent unwanted ear activation and beeping.
+ */
 class BatteryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
+        val prefs = context.getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
+        val allowChargingVoice = prefs.getBoolean("CHARGING_VOICE_ALERT", false)
 
         when (action) {
             Intent.ACTION_POWER_CONNECTED -> {
-                sendVoiceBroadcast(context, "Power source connected, Boss. Charging initiated.")
+                if (allowChargingVoice) {
+                    val serviceIntent = Intent(context, JarvisService::class.java).apply {
+                        putExtra("SPEAK_TEXT", "Power connected, Boss. Charging initiated.")
+                    }
+                    try { context.startService(serviceIntent) } catch (ignored: Exception) {}
+                }
             }
             Intent.ACTION_POWER_DISCONNECTED -> {
-                sendVoiceBroadcast(context, "Disconnected from external power grid. Running on internal battery reserves, Boss.")
+                if (allowChargingVoice) {
+                    val serviceIntent = Intent(context, JarvisService::class.java).apply {
+                        putExtra("SPEAK_TEXT", "Disconnected from power grid, Boss.")
+                    }
+                    try { context.startService(serviceIntent) } catch (ignored: Exception) {}
+                }
             }
             Intent.ACTION_BATTERY_LOW -> {
-                sendVoiceBroadcast(context, "Warning Boss, auxiliary battery level is critically low. Please recharge immediately.")
+                val serviceIntent = Intent(context, JarvisService::class.java).apply {
+                    putExtra("SPEAK_TEXT", "Warning Boss, battery level is below 15 percent.")
+                }
+                try { context.startService(serviceIntent) } catch (ignored: Exception) {}
             }
-            Intent.ACTION_BATTERY_OKAY -> {
-                sendVoiceBroadcast(context, "Power levels stabilized, Boss.")
-            }
-        }
-    }
-
-    private fun sendVoiceBroadcast(context: Context, message: String) {
-        val serviceIntent = Intent(context, JarvisService::class.java).apply {
-            putExtra("SPEAK_TEXT", message)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
-            context.startService(serviceIntent)
         }
     }
 }

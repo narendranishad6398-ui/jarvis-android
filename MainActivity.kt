@@ -7,276 +7,340 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SwitchCompat
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
- * JARVIS Main Command Dashboard
- * - Apple iOS Liquid Glass Aesthetic.
- * - Custom Voice Lock & Unlock Command Center.
- * - Gemini Live Camera Optical Vision Scanner.
- * - Master One-Click Permissions Setup.
+ * JARVIS Command Deck & Control Center
+ * - Liquid Frosted Glass UI.
+ * - Direct 1-Tap Hardware Toggles (Net, Wi-Fi, Hotspot, Bluetooth, Torch, Lock, Camera, Silent).
+ * - Custom Voice Command Center (Custom Wake-Word, Voice Screen Unlock & Lock).
+ * - Silent Hands-Free Ear Engine (Zero Beep).
  */
 class MainActivity : AppCompatActivity() {
 
-    private val PERMISSION_REQUEST_CODE = 200
-
     private lateinit var statusText: TextView
-    private lateinit var serviceSwitch: SwitchCompat
     private lateinit var grantAllBtn: Button
-    private lateinit var overlayPermBtn: Button
-    private lateinit var batteryOptBtn: Button
-    private var accessibilityBtn: Button? = null
-    private lateinit var defaultAssistantBtn: Button
-    private lateinit var geminiKeyBtn: Button
+    private lateinit var accessibilityBtn: Button
     private lateinit var testMicBtn: Button
+    private lateinit var liveCameraBtn: Button
+    private lateinit var geminiKeyBtn: Button
 
+    // Hardware Toggles
+    private var btnDataToggle: Button? = null
+    private var btnWifiToggle: Button? = null
+    private var btnHotspotToggle: Button? = null
+    private var btnBtToggle: Button? = null
+    private var btnTorchToggle: Button? = null
+    private var btnLockToggle: Button? = null
+    private var btnCameraToggle: Button? = null
+    private var btnRotateToggle: Button? = null
+    private var btnGpsToggle: Button? = null
+    private var btnDarkToggle: Button? = null
+    private var btnBatterySaverToggle: Button? = null
+    private var btnDndToggle: Button? = null
+
+    // Custom Voice Command Center
+    private var customWakeWordInput: EditText? = null
     private var customUnlockInput: EditText? = null
     private var customLockInput: EditText? = null
     private var voicePasswordBtn: Button? = null
-    private var liveCameraBtn: Button? = null
+    private var silentEarSwitch: Switch? = null
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            startJarvisService()
+            checkBatteryOptimization()
+            checkAccessibilityStatus()
+        } else {
+            Toast.makeText(this, "Permissions needed for JARVIS voice & phone control protocols.", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
-
         statusText = findViewById(R.id.statusText)
-        serviceSwitch = findViewById(R.id.serviceSwitch)
         grantAllBtn = findViewById(R.id.grantAllBtn)
-        overlayPermBtn = findViewById(R.id.overlayPermBtn)
-        batteryOptBtn = findViewById(R.id.batteryOptBtn)
-        defaultAssistantBtn = findViewById(R.id.defaultAssistantBtn)
-        geminiKeyBtn = findViewById(R.id.geminiKeyBtn)
+        accessibilityBtn = findViewById(R.id.accessibilityBtn)
         testMicBtn = findViewById(R.id.testMicBtn)
+        liveCameraBtn = findViewById(R.id.liveCameraBtn)
+        geminiKeyBtn = findViewById(R.id.geminiKeyBtn)
 
-        val btnId = resources.getIdentifier("accessibilityBtn", "id", packageName)
-        if (btnId != 0) {
-            accessibilityBtn = findViewById(btnId)
-            accessibilityBtn?.setOnClickListener {
-                try {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    Toast.makeText(this, "Turn ON 'JARVIS' in Accessibility settings for full phone control!", Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Open Accessibility in Phone Settings", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-
-        // Custom Voice Lock & Unlock Inputs Setup
+        setupHardwareToggles()
         setupCustomVoiceCommandCenter()
 
-        // Gemini Live Camera Vision Button Setup
-        val camBtnId = resources.getIdentifier("liveCameraBtn", "id", packageName)
-        if (camBtnId != 0) {
-            liveCameraBtn = findViewById(camBtnId)
-            liveCameraBtn?.setOnClickListener {
-                CommandExecutor.launchGoogleLensOrCamera(this) { reply, _ ->
-                    Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-
-        setupButtons()
-        checkAndRequestPermissions()
-        startJarvisBackgroundService()
-    }
-
-    private fun setupCustomVoiceCommandCenter() {
-        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
-
-        val unlockInputId = resources.getIdentifier("customUnlockInput", "id", packageName)
-        if (unlockInputId != 0) {
-            customUnlockInput = findViewById(unlockInputId)
-            val currentUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")
-            customUnlockInput?.setText(currentUnlock)
-        }
-
-        val lockInputId = resources.getIdentifier("customLockInput", "id", packageName)
-        if (lockInputId != 0) {
-            customLockInput = findViewById(lockInputId)
-            val currentLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")
-            customLockInput?.setText(currentLock)
-        }
-
-        val voiceSaveId = resources.getIdentifier("voicePasswordBtn", "id", packageName)
-        if (voiceSaveId != 0) {
-            voicePasswordBtn = findViewById(voiceSaveId)
-            voicePasswordBtn?.setOnClickListener {
-                val newUnlock = customUnlockInput?.text?.toString()?.trim() ?: "khul ja sim sim"
-                val newLock = customLockInput?.text?.toString()?.trim() ?: "phone lock karo"
-
-                prefs.edit()
-                    .putString("CUSTOM_UNLOCK_PHRASE", newUnlock)
-                    .putString("CUSTOM_LOCK_PHRASE", newLock)
-                    .apply()
-
-                Toast.makeText(this, "Custom Voice Passwords Saved!\nUnlock: '$newUnlock'\nLock: '$newLock'", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun setupButtons() {
         grantAllBtn.setOnClickListener {
-            checkAndRequestPermissions()
-            requestOverlayPermission()
-            requestIgnoreBatteryOptimizations()
-            Toast.makeText(this, "All Protocols Activated! Say 'Hey Jarvis' or your custom voice password.", Toast.LENGTH_LONG).show()
+            requestAllPermissions()
+        }
+
+        accessibilityBtn.setOnClickListener {
+            openAccessibilitySettings()
+        }
+
+        liveCameraBtn.setOnClickListener {
+            openGoogleLensOrCamera()
+        }
+
+        geminiKeyBtn.setOnClickListener {
+            showGeminiKeyDialog()
         }
 
         testMicBtn.setOnClickListener {
-            val intent = Intent(this, AssistantOverlayActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
+                putExtra("EXTRA_START_LISTENING", true)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            startActivity(intent)
+            startActivity(overlayIntent)
         }
-
-        serviceSwitch.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                startJarvisBackgroundService()
-                statusText.text = "● 24/7 Silent Ear • Standby"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-            } else {
-                stopJarvisBackgroundService()
-                statusText.text = "○ JARVIS Offline"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
-            }
-        }
-
-        overlayPermBtn.setOnClickListener { requestOverlayPermission() }
-        batteryOptBtn.setOnClickListener { requestIgnoreBatteryOptimizations() }
-
-        defaultAssistantBtn.setOnClickListener {
-            try {
-                startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
-            } catch (e: Exception) {
-                try {
-                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-                } catch (ex: Exception) {
-                    Toast.makeText(this, "Set JARVIS as Default Assistant in Phone Settings", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-
-        geminiKeyBtn.setOnClickListener { showGeminiKeyDialog() }
     }
 
-    private fun checkAndRequestPermissions() {
+    override fun onResume() {
+        super.onResume()
+        checkAccessibilityStatus()
+    }
+
+    private fun setupHardwareToggles() {
+        btnDataToggle = findViewById(R.id.btnDataToggle)
+        btnWifiToggle = findViewById(R.id.btnWifiToggle)
+        btnHotspotToggle = findViewById(R.id.btnHotspotToggle)
+        btnBtToggle = findViewById(R.id.btnBtToggle)
+        btnTorchToggle = findViewById(R.id.btnTorchToggle)
+        btnLockToggle = findViewById(R.id.btnLockToggle)
+        btnCameraToggle = findViewById(R.id.btnCameraToggle)
+        btnRotateToggle = findViewById(R.id.btnRotateToggle)
+        btnGpsToggle = findViewById(R.id.btnGpsToggle)
+        btnDarkToggle = findViewById(R.id.btnDarkToggle)
+        btnBatterySaverToggle = findViewById(R.id.btnBatterySaverToggle)
+        btnDndToggle = findViewById(R.id.btnDndToggle)
+
+        btnDataToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "mobile data") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnWifiToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "wifi") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnHotspotToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "hotspot") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnBtToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "bluetooth") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnTorchToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "torch") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnLockToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "phone lock") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnCameraToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "photo kheencho") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnRotateToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "rotate") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnGpsToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "gps") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnDarkToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "dark mode") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnBatterySaverToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "battery saver") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnDndToggle?.setOnClickListener {
+            CommandExecutor.execute(this, "dnd") { reply, _ ->
+                Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun setupCustomVoiceCommandCenter() {
+        customWakeWordInput = findViewById(R.id.customWakeWordInput)
+        customUnlockInput = findViewById(R.id.customUnlockInput)
+        customLockInput = findViewById(R.id.customLockInput)
+        voicePasswordBtn = findViewById(R.id.voicePasswordBtn)
+        silentEarSwitch = findViewById(R.id.silentEarSwitch)
+
+        val prefs = getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
+        val savedWake = prefs.getString("CUSTOM_WAKE_WORD", "") ?: ""
+        val savedUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim") ?: "khul ja sim sim"
+        val savedLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo") ?: "phone lock karo"
+        val isSilent = prefs.getBoolean("SILENT_EAR_MODE", true)
+
+        if (savedWake.isNotEmpty()) customWakeWordInput?.setText(savedWake)
+        customUnlockInput?.setText(savedUnlock)
+        customLockInput?.setText(savedLock)
+        silentEarSwitch?.isChecked = isSilent
+
+        silentEarSwitch?.setOnCheckedChangeListener { _, isChecked ->
+            prefs.edit().putBoolean("SILENT_EAR_MODE", isChecked).apply()
+            Toast.makeText(this, if (isChecked) "Silent Hands-Free Ear Active (Zero Beep)" else "Chime Beep Active", Toast.LENGTH_SHORT).show()
+        }
+
+        voicePasswordBtn?.setOnClickListener {
+            val newWake = customWakeWordInput?.text?.toString()?.trim() ?: ""
+            val newUnlock = customUnlockInput?.text?.toString()?.trim() ?: "khul ja sim sim"
+            val newLock = customLockInput?.text?.toString()?.trim() ?: "phone lock karo"
+
+            prefs.edit()
+                .putString("CUSTOM_WAKE_WORD", newWake)
+                .putString("CUSTOM_UNLOCK_PHRASE", newUnlock)
+                .putString("CUSTOM_LOCK_PHRASE", newLock)
+                .apply()
+
+            val msg = "Custom Voice Commands Saved!\nWake: ${if (newWake.isNotEmpty()) newWake else "Hey Jarvis"}\nUnlock: '$newUnlock'\nLock: '$newLock'"
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun showVoicePasswordDialog() {
+        val prefs = getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
+        val currentUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")
+        val currentLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")
+        Toast.makeText(this, "Unlock: " + currentUnlock + " / Lock: " + currentLock, Toast.LENGTH_LONG).show()
+    }
+
+    private fun requestAllPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.CALL_PHONE,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.CAMERA
         )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            permissions.add(Manifest.permission.ANSWER_PHONE_CALLS)
-            permissions.add(Manifest.permission.READ_PHONE_STATE)
-        }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-
-        val needed = permissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            permissions.add(Manifest.permission.ANSWER_PHONE_CALLS)
         }
-
-        if (needed.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, needed.toTypedArray(), PERMISSION_REQUEST_CODE)
-        }
+        permissionLauncher.launch(permissions.toTypedArray())
     }
 
-    private fun requestOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            try {
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Please enable overlay permission manually in settings", Toast.LENGTH_SHORT).show()
-            }
+    private fun startJarvisService() {
+        val serviceIntent = Intent(this, JarvisService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
         } else {
-            Toast.makeText(this, "Overlay permission already active!", Toast.LENGTH_SHORT).show()
+            startService(serviceIntent)
+        }
+        statusText.text = "JARVIS Hands-Free Ear: ONLINE"
+        statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
+        Toast.makeText(this, "JARVIS Online! Say 'Hey Jarvis' or your voice password.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun checkAccessibilityStatus() {
+        if (JarvisAccessibilityService.isRunning()) {
+            accessibilityBtn.text = "ACCESSIBILITY SERVICE: ACTIVE"
+            accessibilityBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
+        } else {
+            accessibilityBtn.text = "ENABLE ACCESSIBILITY (FULL PHONE CONTROL)"
+            accessibilityBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
         }
     }
 
-    private fun requestIgnoreBatteryOptimizations() {
+    private fun openAccessibilitySettings() {
+        Toast.makeText(this, "Tap 'JARVIS' or 'Installed Services' and turn switch ON.", Toast.LENGTH_LONG).show()
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
+    }
+
+    private fun checkBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
                 try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
                     startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Please disable battery saver manually for JARVIS", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                Toast.makeText(this, "Battery optimization already disabled!", Toast.LENGTH_SHORT).show()
+                } catch (ignored: Exception) {}
+            }
+        }
+    }
+
+    private fun openGoogleLensOrCamera() {
+        try {
+            val lensIntent = Intent(Intent.ACTION_VIEW, Uri.parse("googleapp://lens")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(lensIntent)
+        } catch (e: Exception) {
+            val cameraIntent = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                startActivity(cameraIntent)
+            } catch (ex: Exception) {
+                Toast.makeText(this, "Camera not accessible.", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     private fun showGeminiKeyDialog() {
-        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
         val currentKey = prefs.getString("GEMINI_API_KEY", "") ?: ""
 
         val input = EditText(this).apply {
-            hint = "AI works free without key. Optional custom key:"
+            hint = "Paste Google Gemini API Key here"
             setText(currentKey)
-            setPadding(40, 30, 40, 30)
-            setTextColor(android.graphics.Color.WHITE)
-            setHintTextColor(android.graphics.Color.GRAY)
         }
 
-        AlertDialog.Builder(this)
-            .setTitle("AI Brain Configuration")
-            .setMessage("JARVIS already has built-in free AI brain. You do not need any key. If you have a custom key, you can enter it below:")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Gemini Live Vision & Brain Key")
+            .setMessage("Optional: Enter your free Gemini API key from ai.google.dev for unlimited AI intelligence.")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val newKey = input.text.toString().trim()
                 prefs.edit().putString("GEMINI_API_KEY", newKey).apply()
-                Toast.makeText(this, "Settings saved!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "API Key Saved!", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
-    }
-
-    private fun startJarvisBackgroundService() {
-        val serviceIntent = Intent(this, JarvisService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ContextCompat.startForegroundService(this, serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
-    }
-
-    private fun stopJarvisBackgroundService() {
-        val serviceIntent = Intent(this, JarvisService::class.java)
-        stopService(serviceIntent)
-    }
-
-    fun showVoicePasswordDialog() {
-        val prefs = getSharedPreferences("JARVIS_PREFS", MODE_PRIVATE)
-        val currentUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")
-        val currentLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")
-        android.widget.Toast.makeText(this, "Unlock: " + currentUnlock + " / Lock: " + currentLock, android.widget.Toast.LENGTH_LONG).show()
     }
 }

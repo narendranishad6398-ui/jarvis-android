@@ -8,168 +8,88 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:paddingLeft="18dp"
-        android:paddingRight="18dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="32dp">
+        android:padding="16dp">
 
-        <!-- Header: Apple iOS Glass Style Badge -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:background="@drawable/card_bg"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingLeft="14dp"
-            android:paddingRight="14dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp">
-
-            <View
-                android:layout_width="7dp"
-                android:layout_height="7dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/orb_glow" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:letterSpacing="0.2"
-                android:text="STARK PROTOCOL • LIQUID GLASS OS"
-                android:textColor="#00F2FE"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- Main Title -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:letterSpacing="0.25"
-            android:text="J.A.R.V.I.S."
-            android:textColor="#FFFFFF"
-            android:textSize="34sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="1dp"
-            android:letterSpacing="0.1"
-            android:text="AUTONOMOUS UNIVERSAL SYSTEM CONTROLLER"
-            android:textColor="#64748B"
-            android:textSize="10sp" />
-
-        <!-- Center Glowing Arc Reactor Stage -->
-        <FrameLayout
-            android:layout_width="160dp"
-            android:layout_height="160dp"
-            android:layout_marginTop="14dp"
-            android:layout_marginBottom="12dp">
-
-            <View
-                android:layout_width="150dp"
-                android:layout_height="150dp"
-                android:layout_gravity="center"
-                android:background="@drawable/orb_glow" />
-
-            <Button
-                android:id="@+id/testMicBtn"
-                android:layout_width="105dp"
-                android:layout_height="105dp"
-                android:layout_gravity="center"
-                android:background="@drawable/orb_center"
-                android:elevation="6dp"
-                android:text="TEST\nJARVIS"
-                android:textColor="#FFFFFF"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </FrameLayout>
-
-        <!-- 24/7 Silent Background Ear Status Card -->
+        <!-- Top Header: iOS Frosted Capsule -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
             android:background="@drawable/card_bg"
-            android:orientation="vertical"
-            android:padding="14dp">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="16dp">
 
-            <RelativeLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+            <View
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:background="@drawable/orb_glow" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="JARVIS MARK VII"
+                    android:textColor="#00F2FE"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.08" />
 
                 <TextView
                     android:id="@+id/statusText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_alignParentStart="true"
-                    android:layout_centerVertical="true"
-                    android:text="● 24/7 Silent Ear • Standby"
-                    android:textColor="#38EF7D"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:text="Core Engine Online - All Systems Nominal"
+                    android:textColor="#94A3B8"
+                    android:textSize="11sp" />
+            </LinearLayout>
 
-                <androidx.appcompat.widget.SwitchCompat
-                    android:id="@+id/serviceSwitch"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:checked="true" />
-            </RelativeLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="8dp"
-                android:layout_marginBottom="8dp"
-                android:background="#1E293B" />
-
-            <TextView
+            <Switch
+                android:id="@+id/silentEarSwitch"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:lineSpacingExtra="2dp"
-                android:text="Triggers: 'Hey Jarvis', 'Jarvis', 'Stark', 'Computer', 'Assistant', 'जार्विस'"
-                android:textColor="#94A3B8"
+                android:checked="true"
+                android:text="Silent"
+                android:textColor="#38EF7D"
                 android:textSize="11sp" />
         </LinearLayout>
 
-        <!-- 1-Click Master Setup Button -->
-        <Button
-            android:id="@+id/grantAllBtn"
+        <!-- Central Arc Reactor Action Button -->
+        <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
-            android:layout_marginBottom="10dp"
-            android:background="@drawable/btn_cyan"
-            android:elevation="4dp"
-            android:letterSpacing="0.05"
-            android:text="⚡ GRANT ALL PERMISSIONS &amp; START"
-            android:textColor="#030712"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:layout_height="170dp"
+            android:layout_marginTop="14dp"
+            android:gravity="center">
 
-        <!-- Accessibility Service Button for Universal In-App Control -->
-        <Button
-            android:id="@+id/accessibilityBtn"
-            android:layout_width="match_parent"
-            android:layout_height="46dp"
-            android:layout_marginBottom="12dp"
-            android:background="@drawable/card_bg"
-            android:text="📲 Turn On Accessibility (In-App Automation)"
-            android:textColor="#00F2FE"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            <View
+                android:layout_width="140dp"
+                android:layout_height="140dp"
+                android:layout_centerInParent="true"
+                android:background="@drawable/orb_glow" />
 
-        <!-- FEATURE: Custom Voice Commands Center (Lock & Unlock with user's own voice phrase) -->
+            <Button
+                android:id="@+id/testMicBtn"
+                android:layout_width="110dp"
+                android:layout_height="110dp"
+                android:layout_centerInParent="true"
+                android:background="@drawable/btn_cyan"
+                android:text="TEST\nMIC"
+                android:textColor="#070A13"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </RelativeLayout>
+
+        <!-- Hardware Control Center (1-Tap Direct Toggles) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_marginTop="14dp"
             android:background="@drawable/card_bg"
             android:orientation="vertical"
             android:padding="16dp">
@@ -177,212 +97,362 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="4dp"
-                android:text="🔐 CUSTOM VOICE LOCK &amp; UNLOCK"
-                android:textColor="#38EF7D"
+                android:text="CONTROL CENTER (DIRECT TOGGLES)"
+                android:textColor="#00F2FE"
                 android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:letterSpacing="0.05" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:text="Apna manchaha secret voice password set karein jisse phone lock aur unlock ho:"
+                android:layout_marginTop="2dp"
+                android:text="1-Tap phone hardware toggles &amp; shortcuts"
+                android:textColor="#64748B"
+                android:textSize="11sp" />
+
+            <GridLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:columnCount="4"
+                android:rowCount="3">
+
+                <!-- Row 1 -->
+                <Button
+                    android:id="@+id/btnDataToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="NET"
+                    android:textColor="#38EF7D"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnWifiToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="WI-FI"
+                    android:textColor="#00F2FE"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnHotspotToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="HOTSPOT"
+                    android:textColor="#FBBF24"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnBtToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="BT"
+                    android:textColor="#60A5FA"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <!-- Row 2 -->
+                <Button
+                    android:id="@+id/btnTorchToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="TORCH"
+                    android:textColor="#FDE047"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnLockToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="LOCK"
+                    android:textColor="#F43F5E"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnRotateToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="ROTATE"
+                    android:textColor="#34D399"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnGpsToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="GPS"
+                    android:textColor="#38BDF8"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <!-- Row 3 -->
+                <Button
+                    android:id="@+id/btnDarkToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="DARK"
+                    android:textColor="#818CF8"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnBatterySaverToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="SAVER"
+                    android:textColor="#F59E0B"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnDndToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="DND"
+                    android:textColor="#EC4899"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnCameraToggle"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_columnWeight="1"
+                    android:layout_margin="3dp"
+                    android:background="@drawable/card_bg"
+                    android:text="PHOTO"
+                    android:textColor="#A855F7"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+            </GridLayout>
+        </LinearLayout>
+
+        <!-- Custom Voice Command Center (Wake, Unlock & Lock) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="CUSTOM VOICE COMMAND CENTER"
+                android:textColor="#38EF7D"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.05" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Set your personal voice trigger phrases"
+                android:textColor="#64748B"
+                android:textSize="11sp" />
+
+            <!-- 1. Custom Wake Word -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Personal Wake Word (Optional):"
                 android:textColor="#94A3B8"
                 android:textSize="11sp" />
 
-            <!-- Unlock Password Field -->
+            <EditText
+                android:id="@+id/customWakeWordInput"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="4dp"
+                android:background="#151D33"
+                android:hint="Default: Hey Jarvis / Jarvis / Stark"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#475569"
+                android:textSize="13sp" />
+
+            <!-- 2. Custom Unlock Phrase -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Voice Unlock Command:"
-                android:textColor="#E2E8F0"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="8dp"
+                android:text="Screen Unlock Voice Password:"
+                android:textColor="#94A3B8"
+                android:textSize="11sp" />
 
             <EditText
                 android:id="@+id/customUnlockInput"
                 android:layout_width="match_parent"
-                android:layout_height="42dp"
+                android:layout_height="44dp"
                 android:layout_marginTop="4dp"
-                android:layout_marginBottom="8dp"
-                android:background="@drawable/card_bg"
-                android:hint="e.g. khul ja sim sim, open sesame, jarvis unlock"
-                android:paddingLeft="12dp"
-                android:paddingRight="12dp"
+                android:background="#151D33"
+                android:hint="Default: khul ja sim sim"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#475569"
-                android:textSize="12sp" />
+                android:textSize="13sp" />
 
-            <!-- Lock Password Field -->
+            <!-- 3. Custom Lock Phrase -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Voice Lock Command:"
-                android:textColor="#E2E8F0"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="8dp"
+                android:text="Screen Lock Voice Command:"
+                android:textColor="#94A3B8"
+                android:textSize="11sp" />
 
             <EditText
                 android:id="@+id/customLockInput"
                 android:layout_width="match_parent"
-                android:layout_height="42dp"
+                android:layout_height="44dp"
                 android:layout_marginTop="4dp"
-                android:layout_marginBottom="12dp"
-                android:background="@drawable/card_bg"
-                android:hint="e.g. phone lock karo, band ho ja, jarvis lock"
-                android:paddingLeft="12dp"
-                android:paddingRight="12dp"
+                android:background="#151D33"
+                android:hint="Default: phone lock karo"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#475569"
-                android:textSize="12sp" />
+                android:textSize="13sp" />
 
-            <!-- Save Custom Passwords Button -->
             <Button
                 android:id="@+id/voicePasswordBtn"
                 android:layout_width="match_parent"
-                android:layout_height="44dp"
+                android:layout_height="46dp"
+                android:layout_marginTop="12dp"
                 android:background="@drawable/btn_cyan"
-                android:text="💾 Save Custom Voice Passwords"
-                android:textColor="#030712"
+                android:text="SAVE VOICE PASSWORDS"
+                android:textColor="#070A13"
                 android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- FEATURE: Gemini Live Style Camera Vision Card -->
+        <!-- Master Permissions & Accessibility -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
+            android:layout_marginTop="14dp"
             android:background="@drawable/card_bg"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:padding="16dp">
 
-            <RelativeLayout
+            <Button
+                android:id="@+id/grantAllBtn"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="50dp"
+                android:background="@drawable/btn_cyan"
+                android:text="GRANT ALL PERMISSIONS &amp; START"
+                android:textColor="#070A13"
+                android:textSize="13sp"
+                android:textStyle="bold" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignParentStart="true"
-                    android:layout_centerVertical="true"
-                    android:text="📷 GEMINI LIVE CAMERA VISION"
-                    android:textColor="#00F2FE"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:text="AI EYE"
-                    android:textColor="#38EF7D"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
-            </RelativeLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="10dp"
-                android:text="JARVIS camera kholkar aapke samne ki cheezon ko dekh kar batayega:"
-                android:textColor="#94A3B8"
+            <Button
+                android:id="@+id/accessibilityBtn"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/card_bg"
+                android:text="ENABLE ACCESSIBILITY (FULL PHONE CONTROL)"
+                android:textColor="#38EF7D"
                 android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Optical Vision Scanner -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="16dp">
 
             <Button
                 android:id="@+id/liveCameraBtn"
                 android:layout_width="match_parent"
-                android:layout_height="42dp"
+                android:layout_height="46dp"
                 android:background="@drawable/card_bg"
-                android:text="👁️ Launch Gemini Live Camera Optical Scanner"
+                android:text="OPEN LIVE VISION SCANNER"
                 android:textColor="#00F2FE"
-                android:textSize="11sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- Advanced Protocols Settings -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
-            android:background="@drawable/card_bg"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="SYSTEM CONFIGURATION"
-                android:textColor="#64748B"
-                android:textSize="10sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/overlayPermBtn"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:layout_marginBottom="6dp"
-                android:background="@drawable/card_bg"
-                android:text="Enable Floating Window Overlay"
-                android:textColor="#E2E8F0"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/batteryOptBtn"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:layout_marginBottom="6dp"
-                android:background="@drawable/card_bg"
-                android:text="Ignore Battery Optimization (24/7 Run)"
-                android:textColor="#E2E8F0"
-                android:textSize="11sp" />
-
-            <Button
-                android:id="@+id/defaultAssistantBtn"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:layout_marginBottom="6dp"
-                android:background="@drawable/card_bg"
-                android:text="Set JARVIS as Default Assistant"
-                android:textColor="#E2E8F0"
-                android:textSize="11sp" />
+                android:textSize="12sp" />
 
             <Button
                 android:id="@+id/geminiKeyBtn"
                 android:layout_width="match_parent"
                 android:layout_height="40dp"
+                android:layout_marginTop="8dp"
                 android:background="@drawable/card_bg"
-                android:text="Custom Gemini API Key (Optional Free Brain)"
-                android:textColor="#E2E8F0"
+                android:text="SET GEMINI API KEY (OPTIONAL)"
+                android:textColor="#64748B"
                 android:textSize="11sp" />
         </LinearLayout>
 
-        <!-- Universal Directives Guide -->
+        <!-- System Directives Guide -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
             android:background="@drawable/card_bg"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:padding="16dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:text="JARVIS MULTILINGUAL VOICE DIRECTIVES"
+                android:text="JARVIS VOICE PROTOCOLS"
                 android:textColor="#00F2FE"
-                android:textSize="11sp"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
                 android:lineSpacingExtra="3dp"
-                android:text="* Any Language Calling: 'Papa ko call lagao', 'Papa se baat karao', 'Call kato'\n* Settings Auto-Toggle: 'Net band kar', 'Data on kar', 'Hotspot chalu karo', 'Torch jalao'\n* In-App Actions: 'Type karo...', 'Send button dabao', 'Neeche scroll karo', 'Photo lo'\n* Maps and Live Nav: 'Delhi le chalo', 'Rasta dikhao', 'Start navigation', 'Stop navigation'\n* YouTube and Songs: 'YouTube par gana chalao', 'Arijit ke gaane bajao'\n* Universal Lock/Unlock: Bolein apna custom secret voice password\n* AI Brain: Kisi bhi bhasha mein sawaal poochein, turant jawab dega"
+                android:text="* Camera Photos: 'Photo kheencho', 'Photo lo', 'Selfie lo'&#10;* Camera Video: 'Video banao', 'Video record karo', 'Stop recording'&#10;* Direct Calling: 'Papa ko call lagao', 'Mummy ko phone karo', 'Call kato'&#10;* Settings Auto-Toggle: 'Net chalu karo', 'Data off karo', 'Hotspot chalu karo', 'Torch jalao'&#10;* In-App Actions: 'Type karo...', 'Send button dabao', 'Neeche scroll karo'&#10;* Maps &amp; Live Nav: 'Delhi le chalo', 'Rasta dikhao', 'Start navigation'&#10;* YouTube &amp; Music: 'YouTube par gana chalao', 'Arijit ke gaane bajao'&#10;* Screen Lock &amp; Unlock: Bolein apna custom secret voice password&#10;* AI Brain: Kisi bhi bhasha mein baat karein, turant jawab dega"
                 android:textColor="#CBD5E1"
                 android:textSize="11sp" />
         </LinearLayout>
