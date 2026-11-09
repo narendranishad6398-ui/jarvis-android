@@ -26,7 +26,6 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
     private val SPEECH_REQUEST_CODE = 501
 
     private lateinit var overlayRoot: View
-    private lateinit var cardContainer: View
     private lateinit var overlayUserText: TextView
     private lateinit var overlayResponseText: TextView
     private lateinit var lensBtn: Button
@@ -46,80 +45,78 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_assistant_overlay)
+        try {
+            setContentView(R.layout.activity_assistant_overlay)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            km.requestDismissKeyguard(this, null)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
-        }
-
-        overlayRoot = findViewById(R.id.overlayRoot)
-        cardContainer = findViewById(R.id.cardContainer)
-        overlayUserText = findViewById(R.id.overlayUserText)
-        overlayResponseText = findViewById(R.id.overlayResponseText)
-        lensBtn = findViewById(R.id.lensBtn)
-        overlayMicBtn = findViewById(R.id.overlayMicBtn)
-        closeBtn = findViewById(R.id.closeBtn)
-
-        tts = TextToSpeech(this, this)
-
-        val initialQuery = intent.getStringExtra("EXTRA_USER_QUERY") ?: ""
-        val initialReply = intent.getStringExtra("EXTRA_ASSISTANT_REPLY") ?: ""
-        val startListening = intent.getBooleanExtra("EXTRA_START_LISTENING", true)
-
-        if (initialQuery.isNotEmpty()) {
-            overlayUserText.text = initialQuery
-        } else {
-            overlayUserText.text = "Listening..."
-        }
-
-        if (initialReply.isNotEmpty()) {
-            overlayResponseText.text = initialReply
-        } else {
-            overlayResponseText.text = "Haan Sir, boliye?"
-        }
-
-        // Tap on outer dimmed background to dismiss
-        overlayRoot.setOnClickListener {
-            finishAndDismiss()
-        }
-
-        // Tap inside the bottom card will NOT dismiss
-        cardContainer.setOnClickListener {
-            // Consumed touch, do nothing
-        }
-
-        // Close button
-        closeBtn.setOnClickListener {
-            finishAndDismiss()
-        }
-
-        // Lens / Camera button
-        lensBtn.setOnClickListener {
-            CommandExecutor.launchGoogleLensOrCamera(this) { reply, _ ->
-                speakAndDismiss(reply, true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+                val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+                km?.requestDismissKeyguard(this, null)
+            } else {
+                @Suppress("DEPRECATION")
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                )
             }
-        }
 
-        // Mic tap button: starts listening
-        overlayMicBtn.setOnClickListener {
-            startLiveVoiceRecognition()
-        }
+            overlayRoot = findViewById(R.id.overlayRoot)
+            overlayUserText = findViewById(R.id.overlayUserText)
+            overlayResponseText = findViewById(R.id.overlayResponseText)
+            lensBtn = findViewById(R.id.lensBtn)
+            overlayMicBtn = findViewById(R.id.overlayMicBtn)
+            closeBtn = findViewById(R.id.closeBtn)
 
-        if (startListening) {
-            startLiveVoiceRecognition()
-        } else if (initialReply.isNotEmpty()) {
-            speakAndDismiss(initialReply, false)
+            tts = TextToSpeech(this, this)
+
+            val initialQuery = intent.getStringExtra("EXTRA_USER_QUERY") ?: ""
+            val initialReply = intent.getStringExtra("EXTRA_ASSISTANT_REPLY") ?: ""
+            val startListening = intent.getBooleanExtra("EXTRA_START_LISTENING", true)
+
+            if (initialQuery.isNotEmpty()) {
+                overlayUserText.text = initialQuery
+            } else {
+                overlayUserText.text = "Listening..."
+            }
+
+            if (initialReply.isNotEmpty()) {
+                overlayResponseText.text = initialReply
+            } else {
+                overlayResponseText.text = "Haan Sir, boliye?"
+            }
+
+            // Tap outer background to dismiss
+            overlayRoot.setOnClickListener {
+                finishAndDismiss()
+            }
+
+            // Close button
+            closeBtn.setOnClickListener {
+                finishAndDismiss()
+            }
+
+            // Lens / Camera button
+            lensBtn.setOnClickListener {
+                CommandExecutor.launchGoogleLensOrCamera(this) { reply, _ ->
+                    speakAndDismiss(reply, true)
+                }
+            }
+
+            // Mic tap button: starts listening
+            overlayMicBtn.setOnClickListener {
+                startLiveVoiceRecognition()
+            }
+
+            if (startListening) {
+                startLiveVoiceRecognition()
+            } else if (initialReply.isNotEmpty()) {
+                speakAndDismiss(initialReply, false)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal in onCreate: ${e.message}")
         }
     }
 
@@ -149,7 +146,6 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
                             isListening = false
                             overlayMicBtn.text = "🎙"
                             Log.e(TAG, "SpeechRecognizer error: $error. Launching fallback dialog...")
-                            // Seamless fallback to system Google voice dialog
                             startFallbackSpeechIntent()
                         }
                         override fun onResults(results: Bundle?) {
@@ -177,7 +173,6 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
 
                     speechRecognizer?.startListening(recognizerIntent)
                 } else {
-                    // Direct system fallback if recognizer service is unavailable
                     startFallbackSpeechIntent()
                 }
             } catch (e: Exception) {
@@ -196,7 +191,7 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
             }
             startActivityForResult(intent, SPEECH_REQUEST_CODE)
         } catch (e: Exception) {
-            overlayResponseText.text = "Mic error: Please enable Google Speech in Phone Settings."
+            overlayResponseText.text = "Mic error: Please check speech settings."
             resetAutoDismissTimer(4000)
         }
     }

@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.Jarvis" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:statusBarColor">#070913</item>
+        <item name="android:navigationBarColor">#070913</item>
+    </style>
+
+    <!-- Google Assistant Style Floating Translucent Overlay Theme (100% Crash-Safe) -->
+    <style name="Theme.JarvisOverlay" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.45</item>
+    </style>
+</resources>

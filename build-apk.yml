@@ -1,0 +1,51 @@
+name: Build Native Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.5'
+
+    - name: Sync Uploaded Files to Target Folders
+      run: |
+        mkdir -p app/src/main/java/com/stark/jarvis
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+        if [ -f "AndroidManifest.xml" ]; then mv -f AndroidManifest.xml app/src/main/; fi
+        if [ -f "activity_assistant_overlay.xml" ]; then mv -f activity_assistant_overlay.xml app/src/main/res/layout/; fi
+        if [ -f "activity_main.xml" ]; then mv -f activity_main.xml app/src/main/res/layout/; fi
+        if [ -f "styles.xml" ]; then mv -f styles.xml app/src/main/res/values/; fi
+        if [ -f "CommandExecutor.kt" ]; then mv -f CommandExecutor.kt app/src/main/java/com/stark/jarvis/; fi
+        if [ -f "AssistantOverlayActivity.kt" ]; then mv -f AssistantOverlayActivity.kt app/src/main/java/com/stark/jarvis/; fi
+        if [ -f "JarvisService.kt" ]; then mv -f JarvisService.kt app/src/main/java/com/stark/jarvis/; fi
+        if [ -f "MainActivity.kt" ]; then mv -f MainActivity.kt app/src/main/java/com/stark/jarvis/; fi
+
+    - name: Build APK
+      run: |
+        echo "android.useAndroidX=true" >> gradle.properties
+        echo "android.enableJetifier=true" >> gradle.properties
+        gradle assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: jarvis-screen-off-apk
+        path: app/build/outputs/apk/debug/app-debug.apk
