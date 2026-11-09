@@ -1,7 +1,5 @@
 package com.stark.jarvis
 
-import android.app.KeyguardManager
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -16,11 +14,17 @@ import android.speech.tts.Voice
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.util.Locale
 
+/**
+ * JARVIS Floating Translucent Assistant Overlay
+ * - Deep masculine JARVIS voice.
+ * - Says "Hello Boss" on trigger.
+ * - Hands-free auto dismiss for In-App actions so underlying apps receive focus.
+ */
 class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private val TAG = "AssistantOverlay"
@@ -28,21 +32,18 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
     private lateinit var overlayRoot: View
     private lateinit var overlayUserText: TextView
     private lateinit var overlayResponseText: TextView
-    private lateinit var lensBtn: Button
-    private lateinit var overlayMicBtn: Button
-    private lateinit var closeBtn: Button
+    private lateinit var lensBtn: ImageView
+    private lateinit var overlayMicBtn: ImageView
+    private lateinit var closeBtn: ImageView
 
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
     private var isListening = false
-    private var retryCount = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val autoDismissHandler = Handler(Looper.getMainLooper())
-    private val autoDismissRunnable = Runnable {
-        finishAndDismiss()
-    }
+    private val autoDismissRunnable = Runnable { dismissOverlay() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,15 +53,13 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
                 setTurnScreenOn(true)
-                val km = getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
-                km?.requestDismissKeyguard(this, null)
             } else {
                 @Suppress("DEPRECATION")
                 window.addFlags(
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                            WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                 )
             }
 
@@ -73,54 +72,55 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
 
             tts = TextToSpeech(this, this)
 
-            val initialQuery = intent.getStringExtra("EXTRA_USER_QUERY") ?: ""
-            val initialReply = intent.getStringExtra("EXTRA_ASSISTANT_REPLY") ?: ""
-            val startListening = intent.getBooleanExtra("EXTRA_START_LISTENING", true)
+            val initialDirective = intent?.getStringExtra("INITIAL_DIRECTIVE") ?: ""
 
-            if (initialQuery.isNotEmpty()) {
-                overlayUserText.text = initialQuery
-            } else {
-                overlayUserText.text = "Listening..."
-            }
-
-            if (initialReply.isNotEmpty()) {
-                overlayResponseText.text = initialReply
-            } else {
-                overlayResponseText.text = "Haan Sir, boliye?"
-            }
-
-            // Tap outer background to dismiss
             overlayRoot.setOnClickListener {
-                finishAndDismiss()
+                resetAutoDismissTimer(5000)
             }
 
-            // Close button
             closeBtn.setOnClickListener {
-                finishAndDismiss()
+                dismissOverlay()
             }
 
-            // Lens / Camera button
+            overlayMicBtn.setOnClickListener {
+                if (!isListening) {
+                    startLiveVoiceRecognition()
+                }
+            }
+
             lensBtn.setOnClickListener {
                 CommandExecutor.launchGoogleLensOrCamera(this) { reply, _ ->
                     speakAndDismiss(reply, true)
                 }
             }
 
-            // Mic tap button: starts listening
-            overlayMicBtn.setOnClickListener {
-                retryCount = 0
-                startLiveVoiceRecognition()
+            if (initialDirective.isNotEmpty()) {
+                mainHandler.postDelayed({
+                    handleSpokenDirective(initialDirective)
+                }, 300)
+            } else {
+                overlayUserText.text = "JARVIS listening..."
+                overlayResponseText.text = "Hello Boss! Boliye kya hukum hai?"
+                resetAutoDismissTimer(8000)
+                mainHandler.postDelayed({
+                    startLiveVoiceRecognition()
+                }, 400)
             }
 
-            if (initialQuery.isNotEmpty()) {
-                handleSpokenDirective(initialQuery)
-            } else if (startListening) {
-                startLiveVoiceRecognition()
-            } else if (initialReply.isNotEmpty()) {
-                speakAndDismiss(initialReply, false)
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Fatal in onCreate: ${e.message}")
+            Log.e(TAG, "Overlay create error: ${e.message}")
+            finish()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val initialDirective = intent?.getStringExtra("INITIAL_DIRECTIVE") ?: ""
+        if (initialDirective.isNotEmpty()) {
+            handleSpokenDirective(initialDirective)
+        } else {
+            startLiveVoiceRecognition()
         }
     }
 
@@ -128,51 +128,62 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
         mainHandler.post {
             try {
                 autoDismissHandler.removeCallbacks(autoDismissRunnable)
-                overlayUserText.text = "Listening..."
-                overlayResponseText.text = "Haan Sir, boliye?"
-                overlayMicBtn.text = "🔴"
+
+                if (speechRecognizer != null) {
+                    try { speechRecognizer?.destroy() } catch (ignored: Exception) {}
+                    speechRecognizer = null
+                }
 
                 if (SpeechRecognizer.isRecognitionAvailable(this)) {
-                    speechRecognizer?.destroy()
+                    isListening = true
                     speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
                     speechRecognizer?.setRecognitionListener(object : RecognitionListener {
                         override fun onReadyForSpeech(params: Bundle?) {
-                            isListening = true
+                            overlayUserText.text = "Listening, Boss..."
+                            overlayResponseText.text = "Aapki aawaz sun raha hoon..."
                         }
-                        override fun onBeginningOfSpeech() {}
+
+                        override fun onBeginningOfSpeech() {
+                            overlayUserText.text = "Sun raha hoon Boss..."
+                        }
+
                         override fun onRmsChanged(rmsdB: Float) {}
                         override fun onBufferReceived(buffer: ByteArray?) {}
+
                         override fun onEndOfSpeech() {
                             isListening = false
-                            overlayMicBtn.text = "🎙"
+                            overlayUserText.text = "Processing command..."
                         }
+
                         override fun onError(error: Int) {
                             isListening = false
-                            overlayMicBtn.text = "🎙"
-                            Log.w(TAG, "SpeechRecognizer error: $error")
-
-                            // Pure In-App Handling - ZERO Google Dialog Fallback!
-                            if (retryCount < 1) {
-                                retryCount++
-                                overlayResponseText.text = "Sun nahi paya, dobara bolein Sir..."
-                                mainHandler.postDelayed({ startLiveVoiceRecognition() }, 400)
+                            if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                                overlayResponseText.text = "Sun nahi paya Boss, dobara bolein..."
+                                resetAutoDismissTimer(3000)
                             } else {
-                                overlayResponseText.text = "Aawaz clear nahi aayi Sir."
+                                overlayResponseText.text = "Aawaz clear nahi aayi Boss."
                                 resetAutoDismissTimer(2500)
                             }
                         }
+
                         override fun onResults(results: Bundle?) {
                             isListening = false
-                            overlayMicBtn.text = "🎙"
                             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             if (!matches.isNullOrEmpty()) {
                                 handleSpokenDirective(matches[0])
                             } else {
-                                overlayResponseText.text = "Aawaz samajh nahi aayi, Sir."
+                                overlayResponseText.text = "Aawaz samajh nahi aayi, Boss."
                                 resetAutoDismissTimer(2500)
                             }
                         }
-                        override fun onPartialResults(partialResults: Bundle?) {}
+
+                        override fun onPartialResults(partialResults: Bundle?) {
+                            val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            if (!partial.isNullOrEmpty()) {
+                                overlayUserText.text = partial[0]
+                            }
+                        }
+
                         override fun onEvent(eventType: Int, params: Bundle?) {}
                     })
 
@@ -181,31 +192,30 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
                         putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("hi-IN", "en-IN", "en-US", "hi"))
                         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                     }
 
                     speechRecognizer?.startListening(recognizerIntent)
                 } else {
-                    overlayResponseText.text = "Device speech services not ready."
-                    resetAutoDismissTimer(2500)
+                    overlayResponseText.text = "Voice recognizer error."
+                    resetAutoDismissTimer(2000)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Voice recognition start error: ${e.message}")
-                overlayResponseText.text = "Voice recognizer error."
-                resetAutoDismissTimer(2500)
+                Log.e(TAG, "SpeechRecognizer error: ${e.message}")
+                resetAutoDismissTimer(2000)
             }
         }
     }
 
     private fun handleSpokenDirective(spokenText: String) {
         overlayUserText.text = spokenText
-        overlayResponseText.text = "Executing, Sir..."
+        overlayResponseText.text = "Executing, Boss..."
 
         var clean = spokenText.lowercase(Locale.ROOT)
         val wakeWords = listOf(
             "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "suno jarvis",
             "hey jarvish", "hello jarvish", "hi jarvish", "hii jarvish",
-            "jarvis", "jarvish", "जार्विस", "हे जार्विस", "हेलो जार्विस"
+            "jarvis", "jarvish", "\u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947\u0932\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
         )
         for (w in wakeWords) {
             if (clean.contains(w)) {
@@ -214,8 +224,37 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
             }
         }
 
-        if (clean.isEmpty()) {
-            speakAndDismiss("Haan Sir, boliye main kya karoon?", false)
+        if (clean.isEmpty() || clean == "kaise ho" || clean == "kya haal hai" || clean == "hello" || clean == "hi") {
+            speakAndDismiss("Hello Boss! Main bilkul badhiya hoon, aap bataiye kya hukum hai?", false)
+            return
+        }
+
+        // In-App actions require the overlay to minimize so underlying app has window focus:
+        val isInAppAction = clean.startsWith("type") || clean.startsWith("likh") || clean.startsWith("likho") ||
+                clean.contains("click") || clean.contains("dabao") || clean.contains("like karo") ||
+                clean.contains("scroll") || clean.contains("reel") || clean.contains("photo kheencho") ||
+                clean.contains("back") || clean.contains("home") || clean.contains("recents")
+
+        if (isInAppAction) {
+            overlayResponseText.text = "Ji Boss, abhi kar raha hoon..."
+            if (isTtsReady) {
+                tts?.speak("Ji Boss", TextToSpeech.QUEUE_FLUSH, null, "OVERLAY_VOICE")
+            }
+            // Dismiss overlay after brief moment so underlying app regains active window focus
+            mainHandler.postDelayed({
+                dismissOverlay()
+                // Execute accessibility action on the underlying app:
+                CommandExecutor.execute(applicationContext, clean) { reply, _ ->
+                    val speakIntent = Intent(applicationContext, JarvisService::class.java).apply {
+                        putExtra("SPEAK_TEXT", reply)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        applicationContext.startForegroundService(speakIntent)
+                    } else {
+                        applicationContext.startService(speakIntent)
+                    }
+                }
+            }, 250)
             return
         }
 
@@ -232,7 +271,7 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
                 tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "OVERLAY_VOICE")
             }
 
-            val delay = if (isQuickDismiss) 2000L else 4000L
+            val delay = if (isQuickDismiss) 1800L else 3500L
             resetAutoDismissTimer(delay)
         }
     }
@@ -247,54 +286,49 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
                     autoDismissHandler.removeCallbacks(autoDismissRunnable)
                 }
                 override fun onDone(utteranceId: String?) {
-                    autoDismissHandler.postDelayed(autoDismissRunnable, 1600)
+                    autoDismissHandler.postDelayed(autoDismissRunnable, 1400)
                 }
                 override fun onError(utteranceId: String?) {
-                    autoDismissHandler.postDelayed(autoDismissRunnable, 2000)
+                    autoDismissHandler.postDelayed(autoDismissRunnable, 1800)
                 }
             })
         }
     }
 
     /**
-     * Human-Like Natural Voice Engine
-     * Filters through available system and network voices to pick high-fidelity,
-     * non-robotic Hindi / Indian English neural voice.
+     * Deep Masculine Voice Engine (Iron Man JARVIS Profile)
+     * Filters for male Hindi / Indian English voices with lower baritone pitch.
      */
     private fun selectNaturalHumanVoice() {
         try {
-            val defaultLocale = Locale("hi", "IN")
-            tts?.language = defaultLocale
+            tts?.language = Locale("hi", "IN")
 
             val voices = tts?.voices
             if (!voices.isNullOrEmpty()) {
-                val naturalVoice = voices.find { voice ->
+                val maleVoice = voices.find { voice ->
                     val name = voice.name.lowercase(Locale.ROOT)
                     val lang = voice.locale.language
                     val isHindiOrIndian = (lang == "hi" || (lang == "en" && voice.locale.country == "IN"))
-                    val isHighQuality = !voice.isNetworkConnectionRequired &&
-                        (voice.quality >= Voice.QUALITY_HIGH ||
-                         name.contains("natural") || name.contains("neural") || name.contains("high") ||
-                         name.contains("male") || name.contains("female"))
-                    isHindiOrIndian && isHighQuality
+                    val isMale = (name.contains("male") || name.contains("man") || name.contains("boy") ||
+                            name.contains("hie") || name.contains("hid") || name.contains("end") || name.contains("enc")) &&
+                            !name.contains("female") && !name.contains("woman") && !name.contains("girl")
+                    isHindiOrIndian && isMale
                 } ?: voices.find { voice ->
-                    voice.locale.language == "hi"
-                } ?: voices.find { voice ->
-                    voice.locale.language == "en" && voice.locale.country == "IN"
+                    val name = voice.name.lowercase(Locale.ROOT)
+                    !name.contains("female") && !name.contains("woman") && !name.contains("girl")
                 }
 
-                if (naturalVoice != null) {
-                    tts?.voice = naturalVoice
-                    Log.d(TAG, "Selected Natural Human Voice: ${naturalVoice.name}")
+                if (maleVoice != null) {
+                    tts?.voice = maleVoice
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Voice configuration: ${e.message}")
+            Log.e(TAG, "Voice select error: ${e.message}")
         }
 
-        // Natural warm human pitch & cadence
-        tts?.setPitch(1.02f)
-        tts?.setSpeechRate(1.02f)
+        // Deep baritone masculine pitch & clear rate
+        tts?.setPitch(0.84f)
+        tts?.setSpeechRate(1.00f)
     }
 
     private fun resetAutoDismissTimer(delayMillis: Long) {
@@ -302,13 +336,12 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
         autoDismissHandler.postDelayed(autoDismissRunnable, delayMillis)
     }
 
-    private fun finishAndDismiss() {
+    private fun dismissOverlay() {
         autoDismissHandler.removeCallbacks(autoDismissRunnable)
-        try { speechRecognizer?.stopListening() } catch (e: Exception) {}
-        try { speechRecognizer?.destroy() } catch (e: Exception) {}
         try {
             sendBroadcast(Intent("com.stark.jarvis.OVERLAY_DISMISSED"))
-        } catch (e: Exception) {}
+        } catch (ignored: Exception) {}
+
         finish()
         overridePendingTransition(0, android.R.anim.fade_out)
     }
@@ -316,10 +349,7 @@ class AssistantOverlayActivity : AppCompatActivity(), TextToSpeech.OnInitListene
     override fun onDestroy() {
         super.onDestroy()
         autoDismissHandler.removeCallbacks(autoDismissRunnable)
-        try { speechRecognizer?.destroy() } catch (e: Exception) {}
-        try { tts?.stop(); tts?.shutdown() } catch (e: Exception) {}
-        try {
-            sendBroadcast(Intent("com.stark.jarvis.OVERLAY_DISMISSED"))
-        } catch (e: Exception) {}
+        try { speechRecognizer?.destroy() } catch (ignored: Exception) {}
+        try { tts?.stop(); tts?.shutdown() } catch (ignored: Exception) {}
     }
 }
