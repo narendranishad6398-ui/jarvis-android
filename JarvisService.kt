@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -31,10 +30,11 @@ import androidx.core.app.NotificationCompat
 import java.util.Locale
 
 /**
- * JARVIS 24/7 Background Ear & Telemetry Service
- * Silent Background Listening without any "toon-toon" beeps.
- * Strict Wake-word verification: ignores other apps and video playback sound.
- * Speaks in an authoritative, deep masculine JARVIS voice.
+ * JARVIS 24/7 Silent Background Ear & Autonomous Protocol Service
+ * - Completely silent: Zero "toon-toon" beeps.
+ * - Strict Wake-Word Verification: Never triggers on video/reels sound from running apps.
+ * - Custom Voice Lock & Unlock Engine.
+ * - Deep Authoritative Male Voice.
  */
 class JarvisService : Service(), TextToSpeech.OnInitListener {
 
@@ -58,11 +58,11 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private val overlayReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == "com.stark.jarvis.OVERLAY_DISMISSED") {
-                Log.d(TAG, "Overlay dismissed. Resuming wake-word ear.")
+                Log.d(TAG, "Overlay dismissed. Resuming silent ear.")
                 mainHandler.postDelayed({
                     isOverlayActive = false
-                    restartListeningLoop(500)
-                }, 600)
+                    restartListeningLoop(600)
+                }, 500)
             }
         }
     }
@@ -132,10 +132,6 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    /**
-     * Selects an authoritative, deep baritone Male JARVIS voice.
-     * Eliminates female voices and lowers pitch for Iron Man JARVIS tone.
-     */
     private fun selectDeepMaleJarvisVoice() {
         try {
             tts?.language = Locale("hi", "IN")
@@ -162,7 +158,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             Log.e(TAG, "Voice select error: ${e.message}")
         }
 
-        // Deep baritone male pitch and authoritative rate
+        // Deep baritone masculine pitch & crisp rate
         tts?.setPitch(0.84f)
         tts?.setSpeechRate(1.00f)
     }
@@ -170,14 +166,13 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private fun speakTextOutLoud(text: String) {
         mainHandler.post {
             if (isTtsReady && tts != null) {
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "JARVIS_NOTIFICATION_ID")
+                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "JARVIS_NOTIF_VOICE")
             }
         }
     }
 
     /**
-     * Completely eliminates the "toon-toon" beep sound when starting speech recognizer
-     * by momentarily muting system notification & system audio streams.
+     * Completely eliminates the "toon-toon" mic sound by momentarily muting system notification streams.
      */
     private fun muteRecognizerBeep(mute: Boolean) {
         try {
@@ -205,7 +200,6 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                     speechRecognizer?.setRecognitionListener(object : RecognitionListener {
                         override fun onReadyForSpeech(params: Bundle?) {
                             isListening = true
-                            // Unmute quietly after recognizer has initialized
                             mainHandler.postDelayed({ muteRecognizerBeep(false) }, 300)
                         }
                         override fun onBeginningOfSpeech() {}
@@ -218,7 +212,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                         override fun onError(error: Int) {
                             isListening = false
                             muteRecognizerBeep(false)
-                            restartListeningLoop(700)
+                            restartListeningLoop(800)
                         }
                         override fun onResults(results: Bundle?) {
                             isListening = false
@@ -267,7 +261,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun restartListeningLoop(delayMs: Long = 600) {
+    private fun restartListeningLoop(delayMs: Long = 700) {
         mainHandler.removeCallbacksAndMessages(null)
         mainHandler.postDelayed({
             if (!isOverlayActive && !isPhoneCallActive) {
@@ -278,9 +272,10 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
     /**
      * Strict Wake-Word Verification:
-     * - Prevents YouTube/Reels/Video sound inside other apps from triggering JARVIS.
-     * - If music/video is playing in any app, requires leading wake word.
-     * - Matches "Jarvis" only as a standalone word (avoids accidental "service", "device").
+     * - ONLY activates for user-specified wake words.
+     * - When other apps (YouTube, Reels, Games) play sound, rejects all dialogue unless leading wake word is spoken.
+     * - Custom Voice Unlock: Wakes up and unlocks screen instantly.
+     * - Custom Voice Lock: Locks screen instantly.
      */
     private fun evaluateBackgroundSpeech(matches: List<String>) {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -288,10 +283,34 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
         val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
         val customUnlockPhrase = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")?.trim()?.lowercase(Locale.ROOT) ?: ""
+        val customLockPhrase = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")?.trim()?.lowercase(Locale.ROOT) ?: ""
 
-        // Check for Custom Voice Unlock Password directly:
+        // 1. Strict Allowed Trigger Words & Phrases
+        val allowedPrefixes = listOf(
+            // Jarvis / Jarvish
+            "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "suno jarvis",
+            "hey jarvish", "hello jarvish", "hi jarvish", "hii jarvish", "suno jarvish",
+            // Stark
+            "hey stark", "hello stark", "hi stark", "suno stark",
+            // Computer
+            "hey computer", "hello computer", "suno computer",
+            // Assistant
+            "hey assistant", "hello assistant", "suno assistant",
+            // Hindi
+            "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947\u0932\u094b \u091c\u093e\u0930\u0935\u093f\u0938", "\u0938\u0941\u0928\u094b \u091c\u093e\u0930\u0935\u093f\u0938",
+            "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938\u093c"
+        )
+
+        val allowedSingleWords = listOf(
+            "jarvis", "jarvish", "stark", "computer", "assistant",
+            "\u091c\u093e\u0930\u0935\u093f\u0938", "\u091c\u093e\u0930\u0935\u093f\u0938\u093c"
+        )
+
         for (candidate in matches) {
             val lower = candidate.lowercase(Locale.ROOT).trim()
+            val words = lower.split("\\s+".toRegex())
+
+            // 1. Check Custom Voice Unlock Password directly
             if ((customUnlockPhrase.isNotEmpty() && lower.contains(customUnlockPhrase)) || 
                 lower.contains("khul ja sim sim") || lower.contains("open sesame")) {
                 Log.d(TAG, "Custom Voice Unlock Password matched: '$lower'")
@@ -318,22 +337,21 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 }, 400)
                 return
             }
-        }
 
-        for (candidate in matches) {
-            val lower = candidate.lowercase(Locale.ROOT).trim()
-            val words = lower.split("\\s+".toRegex())
+            // 2. Check Custom Voice Lock Password directly
+            if (customLockPhrase.isNotEmpty() && lower.contains(customLockPhrase)) {
+                Log.d(TAG, "Custom Voice Lock Password matched: '$lower'")
+                triggerWakeAlert()
+                val acc = JarvisAccessibilityService.instance
+                if (acc != null && acc.lockPhoneScreen()) {
+                    speakTextOutLoud("Ji Boss, phone lock kar diya hai.")
+                }
+                return
+            }
 
-            // If another app is playing sound/video, require explicit start wake-word:
+            // 3. Media Playing Protection (Reels, YouTube, Games, Video Sound)
             if (isMediaPlaying) {
-                val strictPrefixes = listOf(
-                    "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "jarvis", "jarvish", "suno jarvis",
-                    "hey stark", "hello stark", "hi stark", "stark",
-                    "hey computer", "computer", "hey assistant", "assistant",
-                    "hey jarvi", "jervis",
-                    "\u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0938\u0941\u0928\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
-                )
-                for (p in strictPrefixes) {
+                for (p in allowedPrefixes) {
                     if (lower.startsWith(p)) {
                         val command = lower.substringAfter(p).trim()
                         triggerWakeAlert()
@@ -341,32 +359,23 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                         return
                     }
                 }
+                // Do NOT trigger on random words from running video/app audio!
                 continue
             }
 
-            // Normal ambient mode:
-            val multiWordWake = listOf(
-                "hey jarvis", "hello jarvis", "hi jarvis", "hii jarvis", "suno jarvis",
-                "hey jarvish", "hello jarvish", "hi jarvish", "hii jarvish", "suno jarvish",
-                "hey stark", "hello stark", "hi stark", "suno stark",
-                "hey computer", "hello computer", "suno computer",
-                "hey assistant", "hello assistant", "suno assistant",
-                "\u0939\u0947 \u091c\u093e\u0930\u0935\u093f\u0938", "\u0939\u0947\u0932\u094b \u091c\u093e\u0930\u0935\u093f\u0938", "\u0938\u0941\u0928\u094b \u091c\u093e\u0930\u0935\u093f\u0938"
-            )
-
+            // 4. Normal Ambient Listening Mode:
             var detectedWake: String? = null
-            for (mw in multiWordWake) {
-                if (lower.contains(mw)) {
-                    detectedWake = mw
+            for (p in allowedPrefixes) {
+                if (lower.contains(p)) {
+                    detectedWake = p
                     break
                 }
             }
 
             if (detectedWake == null) {
-                val singleNames = listOf("jarvis", "jarvish", "stark", "computer", "assistant", "jarvi", "jervis", "\u091c\u093e\u0930\u0935\u093f\u0938")
-                for (sn in singleNames) {
-                    if (words.contains(sn)) {
-                        detectedWake = sn
+                for (sw in allowedSingleWords) {
+                    if (words.contains(sw)) {
+                        detectedWake = sw
                         break
                     }
                 }

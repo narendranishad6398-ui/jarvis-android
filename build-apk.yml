@@ -24,29 +24,33 @@ jobs:
       with:
         gradle-version: '8.5'
 
-    - name: Sync Uploaded Files to Target Folders
+    - name: Auto-Move Files into App Directory
       run: |
         mkdir -p app/src/main/java/com/stark/jarvis
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/xml
-        if [ -f "AndroidManifest.xml" ]; then mv -f AndroidManifest.xml app/src/main/; fi
-        if [ -f "activity_assistant_overlay.xml" ]; then mv -f activity_assistant_overlay.xml app/src/main/res/layout/; fi
-        if [ -f "activity_main.xml" ]; then mv -f activity_main.xml app/src/main/res/layout/; fi
-        if [ -f "styles.xml" ]; then mv -f styles.xml app/src/main/res/values/; fi
-        if [ -f "strings.xml" ]; then mv -f strings.xml app/src/main/res/values/; fi
-        if [ -f "accessibility_service_config.xml" ]; then mv -f accessibility_service_config.xml app/src/main/res/xml/; fi
-        if [ -f "CommandExecutor.kt" ]; then mv -f CommandExecutor.kt app/src/main/java/com/stark/jarvis/; fi
-        if [ -f "AssistantOverlayActivity.kt" ]; then mv -f AssistantOverlayActivity.kt app/src/main/java/com/stark/jarvis/; fi
-        if [ -f "JarvisService.kt" ]; then mv -f JarvisService.kt app/src/main/java/com/stark/jarvis/; fi
-        if [ -f "MainActivity.kt" ]; then mv -f MainActivity.kt app/src/main/java/com/stark/jarvis/; fi
-        if [ -f "JarvisAccessibilityService.kt" ]; then mv -f JarvisAccessibilityService.kt app/src/main/java/com/stark/jarvis/; fi
-
-    - name: Build APK
-      run: |
+        [ -f "AndroidManifest.xml" ] && mv -f AndroidManifest.xml app/src/main/
+        [ -f "activity_assistant_overlay.xml" ] && mv -f activity_assistant_overlay.xml app/src/main/res/layout/
+        [ -f "activity_main.xml" ] && mv -f activity_main.xml app/src/main/res/layout/
+        [ -f "styles.xml" ] && mv -f styles.xml app/src/main/res/values/
+        [ -f "strings.xml" ] && mv -f strings.xml app/src/main/res/values/
+        [ -f "accessibility_service_config.xml" ] && mv -f accessibility_service_config.xml app/src/main/res/xml/
+        [ -f "CommandExecutor.kt" ] && mv -f CommandExecutor.kt app/src/main/java/com/stark/jarvis/
+        [ -f "AssistantOverlayActivity.kt" ] && mv -f AssistantOverlayActivity.kt app/src/main/java/com/stark/jarvis/
+        [ -f "JarvisService.kt" ] && mv -f JarvisService.kt app/src/main/java/com/stark/jarvis/
+        [ -f "MainActivity.kt" ] && mv -f MainActivity.kt app/src/main/java/com/stark/jarvis/
+        [ -f "BatteryReceiver.kt" ] && mv -f BatteryReceiver.kt app/src/main/java/com/stark/jarvis/
+        [ -f "JarvisAccessibilityService.kt" ] && mv -f JarvisAccessibilityService.kt app/src/main/java/com/stark/jarvis/
+        [ -f "glass_card_bg.xml" ] && mv -f glass_card_bg.xml app/src/main/res/drawable/
+        [ -f "glass_pill_cyan.xml" ] && mv -f glass_pill_cyan.xml app/src/main/res/drawable/
+        [ -f "glass_pill_dark.xml" ] && mv -f glass_pill_dark.xml app/src/main/res/drawable/
         echo "android.useAndroidX=true" >> gradle.properties
         echo "android.enableJetifier=true" >> gradle.properties
-        gradle assembleDebug
+
+    - name: Build APK
+      run: gradle assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4

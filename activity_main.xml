@@ -2,7 +2,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#050811"
+    android:background="#070A13"
     android:fillViewport="true">
 
     <LinearLayout
@@ -13,59 +13,88 @@
         android:paddingLeft="18dp"
         android:paddingRight="18dp"
         android:paddingTop="16dp"
-        android:paddingBottom="28dp">
+        android:paddingBottom="32dp">
 
-        <!-- Header Title: Stark Industries JARVIS -->
+        <!-- Header: Apple iOS Glass Style Badge -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/card_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
+
+            <View
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/orb_glow" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.2"
+                android:text="STARK PROTOCOL • LIQUID GLASS OS"
+                android:textColor="#00F2FE"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Main Title -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="8dp"
             android:letterSpacing="0.25"
             android:text="J.A.R.V.I.S."
-            android:textColor="#00F2FE"
-            android:textSize="32sp"
+            android:textColor="#FFFFFF"
+            android:textSize="34sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:letterSpacing="0.15"
-            android:text="STARK INDUSTRIES • AUTONOMOUS AI PROTOCOL"
-            android:textColor="#4FACFE"
-            android:textSize="10sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="1dp"
+            android:letterSpacing="0.1"
+            android:text="AUTONOMOUS UNIVERSAL SYSTEM CONTROLLER"
+            android:textColor="#64748B"
+            android:textSize="10sp" />
 
-        <!-- Center Glowing Arc Reactor Core Visual -->
+        <!-- Center Glowing Arc Reactor Stage -->
         <FrameLayout
-            android:layout_width="170dp"
-            android:layout_height="170dp"
-            android:layout_marginTop="16dp"
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:layout_marginTop="14dp"
             android:layout_marginBottom="12dp">
 
             <View
-                android:layout_width="160dp"
-                android:layout_height="160dp"
+                android:layout_width="150dp"
+                android:layout_height="150dp"
                 android:layout_gravity="center"
                 android:background="@drawable/orb_glow" />
 
             <Button
                 android:id="@+id/testMicBtn"
-                android:layout_width="110dp"
-                android:layout_height="110dp"
+                android:layout_width="105dp"
+                android:layout_height="105dp"
                 android:layout_gravity="center"
                 android:background="@drawable/orb_center"
+                android:elevation="6dp"
                 android:text="TEST\nJARVIS"
                 android:textColor="#FFFFFF"
-                android:textSize="14sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
         </FrameLayout>
 
-        <!-- Realtime System Status Card -->
+        <!-- 24/7 Silent Background Ear Status Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="14dp"
+            android:layout_marginBottom="12dp"
             android:background="@drawable/card_bg"
             android:orientation="vertical"
             android:padding="14dp">
@@ -104,7 +133,8 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Triggers: 'Hey Jarvis', 'Jarvis', 'Stark', 'Computer', 'Assistant'"
+                android:lineSpacingExtra="2dp"
+                android:text="Triggers: 'Hey Jarvis', 'Jarvis', 'Stark', 'Computer', 'Assistant', 'जार्विस'"
                 android:textColor="#94A3B8"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -128,30 +158,156 @@
             android:id="@+id/accessibilityBtn"
             android:layout_width="match_parent"
             android:layout_height="46dp"
-            android:layout_marginBottom="10dp"
+            android:layout_marginBottom="12dp"
             android:background="@drawable/card_bg"
-            android:text="📲 Turn On Accessibility (In-App &amp; Net Controls)"
+            android:text="📲 Turn On Accessibility (In-App Automation)"
             android:textColor="#00F2FE"
             android:textSize="12sp"
             android:textStyle="bold" />
 
-        <!-- Custom Voice Unlock Password Button -->
-        <Button
-            android:id="@+id/voicePasswordBtn"
-            android:layout_width="match_parent"
-            android:layout_height="46dp"
-            android:layout_marginBottom="14dp"
-            android:background="@drawable/card_bg"
-            android:text="🔑 Set Custom Voice Unlock Password"
-            android:textColor="#38EF7D"
-            android:textSize="12sp"
-            android:textStyle="bold" />
-
-        <!-- Permissions & Settings Sub-panel -->
+        <!-- FEATURE: Custom Voice Commands Center (Lock & Unlock with user's own voice phrase) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                android:text="🔐 CUSTOM VOICE LOCK &amp; UNLOCK"
+                android:textColor="#38EF7D"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:text="Apna manchaha secret voice password set karein jisse phone lock aur unlock ho:"
+                android:textColor="#94A3B8"
+                android:textSize="11sp" />
+
+            <!-- Unlock Password Field -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Voice Unlock Command:"
+                android:textColor="#E2E8F0"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/customUnlockInput"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/card_bg"
+                android:hint="e.g. khul ja sim sim, open sesame, jarvis unlock"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#475569"
+                android:textSize="12sp" />
+
+            <!-- Lock Password Field -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Voice Lock Command:"
+                android:textColor="#E2E8F0"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/customLockInput"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:background="@drawable/card_bg"
+                android:hint="e.g. phone lock karo, band ho ja, jarvis lock"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#475569"
+                android:textSize="12sp" />
+
+            <!-- Save Custom Passwords Button -->
+            <Button
+                android:id="@+id/voicePasswordBtn"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:background="@drawable/btn_cyan"
+                android:text="💾 Save Custom Voice Passwords"
+                android:textColor="#030712"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- FEATURE: Gemini Live Style Camera Vision Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:text="📷 GEMINI LIVE CAMERA VISION"
+                    android:textColor="#00F2FE"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:text="AI EYE"
+                    android:textColor="#38EF7D"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+            </RelativeLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="10dp"
+                android:text="JARVIS camera kholkar aapke samne ki cheezon ko dekh kar batayega:"
+                android:textColor="#94A3B8"
+                android:textSize="11sp" />
+
+            <Button
+                android:id="@+id/liveCameraBtn"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:background="@drawable/card_bg"
+                android:text="👁️ Launch Gemini Live Camera Optical Scanner"
+                android:textColor="#00F2FE"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Advanced Protocols Settings -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
             android:background="@drawable/card_bg"
             android:orientation="vertical"
             android:padding="12dp">
@@ -160,7 +316,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:text="ADVANCED PROTOCOLS"
+                android:text="SYSTEM CONFIGURATION"
                 android:textColor="#64748B"
                 android:textSize="10sp"
                 android:textStyle="bold" />
@@ -191,7 +347,7 @@
                 android:layout_height="40dp"
                 android:layout_marginBottom="6dp"
                 android:background="@drawable/card_bg"
-                android:text="Set JARVIS as Default Phone Assistant"
+                android:text="Set JARVIS as Default Assistant"
                 android:textColor="#E2E8F0"
                 android:textSize="11sp" />
 
@@ -200,12 +356,12 @@
                 android:layout_width="match_parent"
                 android:layout_height="40dp"
                 android:background="@drawable/card_bg"
-                android:text="Custom Gemini API Key (Optional)"
+                android:text="Custom Gemini API Key (Optional Free Brain)"
                 android:textColor="#E2E8F0"
                 android:textSize="11sp" />
         </LinearLayout>
 
-        <!-- Command Showcase Card -->
+        <!-- Universal Directives Guide -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -217,7 +373,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="6dp"
-                android:text="JARVIS VOICE DIRECTIVES GUIDE"
+                android:text="JARVIS MULTILINGUAL VOICE DIRECTIVES"
                 android:textColor="#00F2FE"
                 android:textSize="11sp"
                 android:textStyle="bold" />
@@ -226,7 +382,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:lineSpacingExtra="3dp"
-                android:text="• Calls: 'Papa ko call karo', 'Call uthao', 'Call kato'\n• Settings: 'Net on/off karo', 'Hotspot on karo', 'Torch jalao'\n• In-App: 'Type karo...', 'Send button dabao', 'Neeche scroll karo'\n• Maps: 'Delhi ka rasta dikhao', 'Start navigation'\n• Entertainment: 'YouTube par Arijit ke gaane chalao'\n• Controls: 'Phone lock karo', 'Screen kholo', 'Silent mode karo'\n• AI Brain: Ask ANY question in Hindi or English"
+                android:text="• Any Language Calling: 'Papa ko call lagao', 'Papa se baat karao', 'Call kato'\n• Settings Auto-Toggle: 'Net band kar', 'Data on kar', 'Hotspot chalu karo', 'Torch jalao'\n• In-App Actions: 'Type karo...', 'Send button dabao', 'Neeche scroll karo', 'Photo lo'\n• Maps & Live Nav: 'Delhi le chalo', 'Rasta dikhao', 'Start navigation', 'Stop navigation'\n• YouTube & Songs: 'YouTube par gana chalao', 'Arijit ke gaane bajao'\n• Universal Lock/Unlock: Bolein apna custom secret voice password\n• AI Brain: Kisi bhi bhasha mein sawaal poochein, turant jawab dega"
                 android:textColor="#CBD5E1"
                 android:textSize="11sp" />
         </LinearLayout>

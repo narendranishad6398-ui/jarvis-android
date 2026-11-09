@@ -11,20 +11,27 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
 import android.widget.EditText
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
+/**
+ * JARVIS Main Command Dashboard
+ * - Apple iOS Liquid Glass Aesthetic.
+ * - Custom Voice Lock & Unlock Command Center.
+ * - Gemini Live Camera Optical Vision Scanner.
+ * - Master One-Click Permissions Setup.
+ */
 class MainActivity : AppCompatActivity() {
 
     private val PERMISSION_REQUEST_CODE = 200
 
     private lateinit var statusText: TextView
-    private lateinit var serviceSwitch: Switch
+    private lateinit var serviceSwitch: SwitchCompat
     private lateinit var grantAllBtn: Button
     private lateinit var overlayPermBtn: Button
     private lateinit var batteryOptBtn: Button
@@ -33,11 +40,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var geminiKeyBtn: Button
     private lateinit var testMicBtn: Button
 
+    private var customUnlockInput: EditText? = null
+    private var customLockInput: EditText? = null
+    private var voicePasswordBtn: Button? = null
+    private var liveCameraBtn: Button? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // Wake screen when opened over lock screen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -52,7 +63,6 @@ class MainActivity : AppCompatActivity() {
         geminiKeyBtn = findViewById(R.id.geminiKeyBtn)
         testMicBtn = findViewById(R.id.testMicBtn)
 
-        // Safe identifier lookup for accessibilityBtn
         val btnId = resources.getIdentifier("accessibilityBtn", "id", packageName)
         if (btnId != 0) {
             accessibilityBtn = findViewById(btnId)
@@ -66,144 +76,116 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Custom Voice Unlock Password Setup
-        val voicePassId = resources.getIdentifier("voicePasswordBtn", "id", packageName)
-        if (voicePassId != 0) {
-            findViewById<Button>(voicePassId)?.setOnClickListener {
-                showVoicePasswordDialog()
+        // Custom Voice Lock & Unlock Inputs Setup
+        setupCustomVoiceCommandCenter()
+
+        // Gemini Live Camera Vision Button Setup
+        val camBtnId = resources.getIdentifier("liveCameraBtn", "id", packageName)
+        if (camBtnId != 0) {
+            liveCameraBtn = findViewById(camBtnId)
+            liveCameraBtn?.setOnClickListener {
+                CommandExecutor.launchGoogleLensOrCamera(this) { reply, _ ->
+                    Toast.makeText(this, reply, Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
+        setupButtons()
+        checkAndRequestPermissions()
+        startJarvisBackgroundService()
+    }
+
+    private fun setupCustomVoiceCommandCenter() {
+        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+
+        val unlockInputId = resources.getIdentifier("customUnlockInput", "id", packageName)
+        if (unlockInputId != 0) {
+            customUnlockInput = findViewById(unlockInputId)
+            val currentUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")
+            customUnlockInput?.setText(currentUnlock)
+        }
+
+        val lockInputId = resources.getIdentifier("customLockInput", "id", packageName)
+        if (lockInputId != 0) {
+            customLockInput = findViewById(lockInputId)
+            val currentLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")
+            customLockInput?.setText(currentLock)
+        }
+
+        val voiceSaveId = resources.getIdentifier("voicePasswordBtn", "id", packageName)
+        if (voiceSaveId != 0) {
+            voicePasswordBtn = findViewById(voiceSaveId)
+            voicePasswordBtn?.setOnClickListener {
+                val newUnlock = customUnlockInput?.text?.toString()?.trim() ?: "khul ja sim sim"
+                val newLock = customLockInput?.text?.toString()?.trim() ?: "phone lock karo"
+
+                prefs.edit()
+                    .putString("CUSTOM_UNLOCK_PHRASE", newUnlock)
+                    .putString("CUSTOM_LOCK_PHRASE", newLock)
+                    .apply()
+
+                Toast.makeText(this, "Custom Voice Passwords Saved!\nUnlock: '$newUnlock'\nLock: '$newLock'", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun setupButtons() {
         grantAllBtn.setOnClickListener {
-            handleGrantAllPermissions()
-        }
-
-        overlayPermBtn.setOnClickListener {
+            checkAndRequestPermissions()
             requestOverlayPermission()
+            requestIgnoreBatteryOptimizations()
+            Toast.makeText(this, "All Protocols Activated! Say 'Hey Jarvis' or your custom voice password.", Toast.LENGTH_LONG).show()
         }
 
-        batteryOptBtn.setOnClickListener {
-            requestIgnoreBatteryOptimization()
+        testMicBtn.setOnClickListener {
+            val intent = Intent(this, AssistantOverlayActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            startActivity(intent)
         }
+
+        serviceSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                startJarvisBackgroundService()
+                statusText.text = "● 24/7 Silent Ear • Standby"
+                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
+            } else {
+                stopJarvisBackgroundService()
+                statusText.text = "○ JARVIS Offline"
+                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
+            }
+        }
+
+        overlayPermBtn.setOnClickListener { requestOverlayPermission() }
+        batteryOptBtn.setOnClickListener { requestIgnoreBatteryOptimizations() }
 
         defaultAssistantBtn.setOnClickListener {
             try {
                 startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS))
             } catch (e: Exception) {
-                Toast.makeText(this, "Select JARVIS in Device Assistant settings", Toast.LENGTH_SHORT).show()
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                } catch (ex: Exception) {
+                    Toast.makeText(this, "Set JARVIS as Default Assistant in Phone Settings", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
-        geminiKeyBtn.setOnClickListener {
-            showGeminiKeyDialog()
-        }
-
-        testMicBtn.setOnClickListener {
-            val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
-                putExtra("EXTRA_START_LISTENING", true)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(overlayIntent)
-        }
-
-        serviceSwitch.setOnCheckedChangeListener { _, isChecked ->
-            val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("SERVICE_ENABLED", isChecked).apply()
-
-            if (isChecked) {
-                startJarvisBackgroundService()
-                statusText.text = "● 24/7 BACKGROUND MONITORING ACTIVE"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-            } else {
-                stopJarvisBackgroundService()
-                statusText.text = "○ MONITORING STANDBY"
-                statusText.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
-            }
-        }
+        geminiKeyBtn.setOnClickListener { showGeminiKeyDialog() }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            refreshPermissionStates()
-            handleGrantAllPermissions()
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        refreshPermissionStates()
-    }
-
-    private fun refreshPermissionStates() {
-        val hasOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else true
-
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val hasBatteryOpt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            powerManager.isIgnoringBatteryOptimizations(packageName)
-        } else true
-
-        val hasRecordAudio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val hasCallPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
-        val hasContacts = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-        val hasAccessibility = JarvisAccessibilityService.isRunning()
-
-        if (hasRecordAudio) {
-            serviceSwitch.isChecked = true
-            startJarvisBackgroundService()
-        }
-
-        // Update Overlay Button
-        if (hasOverlay) {
-            overlayPermBtn.text = "✅ 1. 'Display Over Apps' Allowed"
-            overlayPermBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-        } else {
-            overlayPermBtn.text = "⚠️ 1. Allow 'Display Over Other Apps'"
-            overlayPermBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
-        }
-
-        // Update Battery Button
-        if (hasBatteryOpt) {
-            batteryOptBtn.text = "✅ 2. Battery Saver Disabled (24/7 Active)"
-            batteryOptBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-        } else {
-            batteryOptBtn.text = "⚠️ 2. Disable Battery Saver"
-            batteryOptBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
-        }
-
-        // Update Accessibility Button
-        accessibilityBtn?.let { btn ->
-            if (hasAccessibility) {
-                btn.text = "✅ 3. Phone & App Control (Active)"
-                btn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-            } else {
-                btn.text = "⚠️ 3. Phone & App Control (Accessibility)"
-                btn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
-            }
-        }
-
-        val allGranted = hasOverlay && hasBatteryOpt && hasRecordAudio && hasCallPhone && hasContacts
-
-        if (allGranted) {
-            grantAllBtn.text = "✅ ALL CORE PERMISSIONS READY (ACTIVE)"
-            grantAllBtn.setTextColor(ContextCompat.getColor(this, android.R.color.black))
-            serviceSwitch.isChecked = true
-            startJarvisBackgroundService()
-            statusText.text = "● 24/7 BACKGROUND MONITORING ACTIVE"
-            statusText.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-        } else {
-            grantAllBtn.text = "⚡ GRANT ALL PERMISSIONS & START"
-        }
-    }
-
-    private fun handleGrantAllPermissions() {
+    private fun checkAndRequestPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.CALL_PHONE,
-            Manifest.permission.READ_CONTACTS
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.CAMERA
         )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            permissions.add(Manifest.permission.ANSWER_PHONE_CALLS)
+            permissions.add(Manifest.permission.READ_PHONE_STATE)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -215,85 +197,41 @@ class MainActivity : AppCompatActivity() {
 
         if (needed.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, needed.toTypedArray(), PERMISSION_REQUEST_CODE)
-            return
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            requestOverlayPermission()
-            return
-        }
-
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !powerManager.isIgnoringBatteryOptimizations(packageName)) {
-            requestIgnoreBatteryOptimization()
-            return
-        }
-
-        if (!JarvisAccessibilityService.isRunning()) {
-            try {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                Toast.makeText(this, "JARVIS ko Accessibility mein ON karein taaki lock/app control chal sake!", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {}
-            return
-        }
-
-        serviceSwitch.isChecked = true
-        startJarvisBackgroundService()
-        Toast.makeText(this, "JARVIS is 100% active and listening for 'Hey Jarvis'!", Toast.LENGTH_SHORT).show()
     }
 
     private fun requestOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
             try {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
                 startActivity(intent)
             } catch (e: Exception) {
-                Toast.makeText(this, "Please enable 'Display Over Other Apps' manually", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please enable overlay permission manually in settings", Toast.LENGTH_SHORT).show()
             }
+        } else {
+            Toast.makeText(this, "Overlay permission already active!", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun requestIgnoreBatteryOptimization() {
+    private fun requestIgnoreBatteryOptimizations() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:$packageName")
                 }
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Please disable battery saver manually for JARVIS", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun showVoicePasswordDialog() {
-        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
-        val currentPass = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim") ?: "khul ja sim sim"
-
-        val input = EditText(this).apply {
-            setText(currentPass)
-            hint = "Jaise: khul ja sim sim, open sesame, jarvis unlock"
-            setPadding(40, 30, 40, 30)
-            setTextColor(android.graphics.Color.WHITE)
-            setHintTextColor(android.graphics.Color.GRAY)
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("🔑 Custom Voice Unlock Password")
-            .setMessage("Apna secret voice password set karein. Lock screen par ye bolte hi turant screen unlock ho jayegi:")
-            .setView(input)
-            .setPositiveButton("Save Password") { _, _ ->
-                val newPass = input.text.toString().trim()
-                if (newPass.isNotEmpty()) {
-                    prefs.edit().putString("CUSTOM_UNLOCK_PHRASE", newPass).apply()
-                    Toast.makeText(this, "Voice Password Saved: '$newPass'", Toast.LENGTH_LONG).show()
+                try {
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Please disable battery saver manually for JARVIS", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(this, "Battery optimization already disabled!", Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 
     private fun showGeminiKeyDialog() {
@@ -304,6 +242,8 @@ class MainActivity : AppCompatActivity() {
             hint = "AI works free without key. Optional custom key:"
             setText(currentKey)
             setPadding(40, 30, 40, 30)
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(android.graphics.Color.GRAY)
         }
 
         AlertDialog.Builder(this)
@@ -331,5 +271,12 @@ class MainActivity : AppCompatActivity() {
     private fun stopJarvisBackgroundService() {
         val serviceIntent = Intent(this, JarvisService::class.java)
         stopService(serviceIntent)
+    }
+
+    fun showVoicePasswordDialog() {
+        val prefs = getSharedPreferences("JARVIS_PREFS", MODE_PRIVATE)
+        val currentUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim")
+        val currentLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo")
+        android.widget.Toast.makeText(this, "Unlock: " + currentUnlock + " / Lock: " + currentLock, android.widget.Toast.LENGTH_LONG).show()
     }
 }
