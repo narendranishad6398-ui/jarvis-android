@@ -824,9 +824,9 @@ object CommandExecutor {
                 handleMapsNavigation(context, command, callback)
             }
 
-            // 25. Launch Apps by Voice
-            command.startsWith("open ") || command.startsWith("kholo ") || command.contains("chalao") -> {
-                val appTarget = command.replace("open ", "").replace("kholo ", "").replace("chalao ", "").trim()
+            // 25. Launch Apps by Voice (Flexible position: start, middle, or end)
+            isOpenAppCommand(command) -> {
+                val appTarget = extractAppTarget(command)
                 launchAppByName(context, appTarget, callback)
             }
 
@@ -1379,19 +1379,62 @@ object CommandExecutor {
         }
     }
 
+    private fun isOpenAppCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        val openWords = listOf(
+            "open", "kholo", "khol do", "khol de", "khol", "chalu karo", "chalu kar", "chalu kar do",
+            "chalao", "chala de", "chala do", "launch", "start", "run", "chalu",
+            "\u0916\u094b\u0932\u094b", "\u0916\u094b\u0932", "\u091a\u0932\u093e\u0913", "\u091a\u093e\u0932\u0942"
+        )
+        return openWords.any { lower.contains(it) }
+    }
+
+    private fun extractAppTarget(command: String): String {
+        var text = command.lowercase(Locale.ROOT)
+        val stopWords = listOf(
+            "open", "kholo", "khol do", "khol de", "khol", "chalu karo", "chalu kar do", "chalu kar", "chala do",
+            "chalao", "chala de", "launch", "start", "run", "chalu", "app", "application", "please", "zara", "bhai",
+            "karo", "kar", "do", "de", "bhi", "ko", "par", "pe",
+            "\u0916\u094b\u0932\u094b", "\u0916\u094b\u0932", "\u091a\u0932\u093e\u0913", "\u091a\u093e\u0932\u0942"
+        )
+        for (w in stopWords) {
+            text = text.replace(w, " ")
+        }
+        val target = text.trim()
+        return when (target) {
+            "yt" -> "youtube"
+            "insta" -> "instagram"
+            "fb" -> "facebook"
+            "wp", "whats app" -> "whatsapp"
+            else -> target
+        }
+    }
+
     private fun launchAppByName(context: Context, rawTarget: String, callback: (String, Boolean) -> Unit) {
         val target = rawTarget.lowercase(Locale.ROOT).trim()
         val pm = context.packageManager
 
         val knownPackages = mapOf(
             "youtube" to "com.google.android.youtube",
+            "yt" to "com.google.android.youtube",
             "whatsapp" to "com.whatsapp",
+            "wp" to "com.whatsapp",
             "instagram" to "com.instagram.android",
+            "insta" to "com.instagram.android",
+            "facebook" to "com.facebook.katana",
+            "fb" to "com.facebook.katana",
             "chrome" to "com.android.chrome",
+            "browser" to "com.android.chrome",
             "maps" to "com.google.android.apps.maps",
             "spotify" to "com.spotify.music",
             "camera" to "com.google.android.GoogleCamera",
-            "gmail" to "com.google.android.gm"
+            "gmail" to "com.google.android.gm",
+            "telegram" to "org.telegram.messenger",
+            "photos" to "com.google.android.apps.photos",
+            "gallery" to "com.google.android.apps.photos",
+            "files" to "com.google.android.apps.nbu.files",
+            "settings" to "com.android.settings",
+            "calculator" to "com.google.android.calculator"
         )
 
         for ((key, pkg) in knownPackages) {

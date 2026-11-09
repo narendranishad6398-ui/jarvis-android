@@ -382,7 +382,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:lineSpacingExtra="3dp"
-                android:text="• Any Language Calling: 'Papa ko call lagao', 'Papa se baat karao', 'Call kato'\n• Settings Auto-Toggle: 'Net band kar', 'Data on kar', 'Hotspot chalu karo', 'Torch jalao'\n• In-App Actions: 'Type karo...', 'Send button dabao', 'Neeche scroll karo', 'Photo lo'\n• Maps & Live Nav: 'Delhi le chalo', 'Rasta dikhao', 'Start navigation', 'Stop navigation'\n• YouTube & Songs: 'YouTube par gana chalao', 'Arijit ke gaane bajao'\n• Universal Lock/Unlock: Bolein apna custom secret voice password\n• AI Brain: Kisi bhi bhasha mein sawaal poochein, turant jawab dega"
+                android:text="* Any Language Calling: 'Papa ko call lagao', 'Papa se baat karao', 'Call kato'\n* Settings Auto-Toggle: 'Net band kar', 'Data on kar', 'Hotspot chalu karo', 'Torch jalao'\n* In-App Actions: 'Type karo...', 'Send button dabao', 'Neeche scroll karo', 'Photo lo'\n* Maps and Live Nav: 'Delhi le chalo', 'Rasta dikhao', 'Start navigation', 'Stop navigation'\n* YouTube and Songs: 'YouTube par gana chalao', 'Arijit ke gaane bajao'\n* Universal Lock/Unlock: Bolein apna custom secret voice password\n* AI Brain: Kisi bhi bhasha mein sawaal poochein, turant jawab dega"
                 android:textColor="#CBD5E1"
                 android:textSize="11sp" />
         </LinearLayout>

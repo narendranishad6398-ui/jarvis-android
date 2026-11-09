@@ -31,6 +31,8 @@ jobs:
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/drawable
         mkdir -p app/src/main/res/xml
+        rm -f JarvisAccessibilityService.kt
+        rm -f app/src/main/java/com/stark/jarvis/JarvisAccessibilityService.kt
         [ -f "AndroidManifest.xml" ] && mv -f AndroidManifest.xml app/src/main/
         [ -f "activity_assistant_overlay.xml" ] && mv -f activity_assistant_overlay.xml app/src/main/res/layout/
         [ -f "activity_main.xml" ] && mv -f activity_main.xml app/src/main/res/layout/
@@ -42,7 +44,6 @@ jobs:
         [ -f "JarvisService.kt" ] && mv -f JarvisService.kt app/src/main/java/com/stark/jarvis/
         [ -f "MainActivity.kt" ] && mv -f MainActivity.kt app/src/main/java/com/stark/jarvis/
         [ -f "BatteryReceiver.kt" ] && mv -f BatteryReceiver.kt app/src/main/java/com/stark/jarvis/
-        [ -f "JarvisAccessibilityService.kt" ] && mv -f JarvisAccessibilityService.kt app/src/main/java/com/stark/jarvis/
         [ -f "glass_card_bg.xml" ] && mv -f glass_card_bg.xml app/src/main/res/drawable/
         [ -f "glass_pill_cyan.xml" ] && mv -f glass_pill_cyan.xml app/src/main/res/drawable/
         [ -f "glass_pill_dark.xml" ] && mv -f glass_pill_dark.xml app/src/main/res/drawable/
