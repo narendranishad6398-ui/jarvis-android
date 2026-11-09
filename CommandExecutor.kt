@@ -61,8 +61,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             val info = AccessibilityServiceInfo().apply {
                 eventTypes = AccessibilityEvent.TYPES_ALL_MASK
                 feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-                flags = AccessibilityServiceInfo.FLAG_DEFAULT or
-                        AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
                         AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
                 notificationTimeout = 100
             }
@@ -360,7 +359,7 @@ object CommandExecutor {
 
             // 5. Hotspot Control
             command.contains("hotspot") || command.contains("हॉटस्पॉट") -> {
-                val intent = Intent(Settings.ACTION_TETHER_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                val intent = Intent("android.settings.TETHER_SETTINGS").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                 try { context.startActivity(intent) } catch (e: Exception) {}
                 callback("Hotspot settings open kar di hai, Sir.", true)
             }
