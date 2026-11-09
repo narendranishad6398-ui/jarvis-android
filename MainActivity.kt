@@ -28,7 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var grantAllBtn: Button
     private lateinit var overlayPermBtn: Button
     private lateinit var batteryOptBtn: Button
-    private lateinit var accessibilityBtn: Button
+    private var accessibilityBtn: Button? = null
     private lateinit var defaultAssistantBtn: Button
     private lateinit var geminiKeyBtn: Button
     private lateinit var testMicBtn: Button
@@ -48,10 +48,23 @@ class MainActivity : AppCompatActivity() {
         grantAllBtn = findViewById(R.id.grantAllBtn)
         overlayPermBtn = findViewById(R.id.overlayPermBtn)
         batteryOptBtn = findViewById(R.id.batteryOptBtn)
-        accessibilityBtn = findViewById(R.id.accessibilityBtn)
         defaultAssistantBtn = findViewById(R.id.defaultAssistantBtn)
         geminiKeyBtn = findViewById(R.id.geminiKeyBtn)
         testMicBtn = findViewById(R.id.testMicBtn)
+
+        // Safe identifier lookup for accessibilityBtn
+        val btnId = resources.getIdentifier("accessibilityBtn", "id", packageName)
+        if (btnId != 0) {
+            accessibilityBtn = findViewById(btnId)
+            accessibilityBtn?.setOnClickListener {
+                try {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    Toast.makeText(this, "Turn ON 'JARVIS' in Accessibility settings for full phone control!", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Open Accessibility in Phone Settings", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         grantAllBtn.setOnClickListener {
             handleGrantAllPermissions()
@@ -63,15 +76,6 @@ class MainActivity : AppCompatActivity() {
 
         batteryOptBtn.setOnClickListener {
             requestIgnoreBatteryOptimization()
-        }
-
-        accessibilityBtn.setOnClickListener {
-            try {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                Toast.makeText(this, "Turn ON 'JARVIS' in Accessibility settings for full phone control!", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Open Accessibility in Phone Settings", Toast.LENGTH_SHORT).show()
-            }
         }
 
         defaultAssistantBtn.setOnClickListener {
@@ -162,12 +166,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Update Accessibility Button
-        if (hasAccessibility) {
-            accessibilityBtn.text = "✅ 3. Phone & App Control (Active)"
-            accessibilityBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
-        } else {
-            accessibilityBtn.text = "⚠️ 3. Phone & App Control (Accessibility)"
-            accessibilityBtn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
+        accessibilityBtn?.let { btn ->
+            if (hasAccessibility) {
+                btn.text = "✅ 3. Phone & App Control (Active)"
+                btn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
+            } else {
+                btn.text = "⚠️ 3. Phone & App Control (Accessibility)"
+                btn.setTextColor(ContextCompat.getColor(this, android.R.color.holo_orange_light))
+            }
         }
 
         val allGranted = hasOverlay && hasBatteryOpt && hasRecordAudio && hasCallPhone && hasContacts
