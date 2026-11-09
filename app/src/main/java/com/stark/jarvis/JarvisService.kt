@@ -11,6 +11,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.hardware.camera2.CameraManager
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.net.Uri
@@ -28,6 +30,9 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -54,8 +59,27 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private var wakeLock: PowerManager.WakeLock? = null
     private var isListening = false
     private var isTtsReady = false
+    private var isSpeaking = false
+
+    private var audioManager: AudioManager? = null
+    private var telephonyManager: TelephonyManager? = null
+    private var phoneStateListener: PhoneStateListener? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                Log.d(TAG, "Audio focus lost to another app. Releasing mic.")
+                stopListening()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d(TAG, "Audio focus gained. Resuming mic.")
+                restartListeningWithDelay()
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -65,16 +89,24 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JARVIS::BackgroundAudioLock")
         wakeLock?.acquire()
 
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         tts = TextToSpeech(this, this)
 
+        setupPhoneStateListener()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildForegroundNotification("Monitoring audio for 'Jarvis'..."))
+        startForeground(NOTIFICATION_ID, buildForegroundNotification("Active: Say 'Hey Jarvis' anytime"))
 
         setupSpeechRecognizer()
         startListeningLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val forceListen = intent?.getBooleanExtra("FORCE_LISTEN", false) ?: false
+        if (forceListen) {
+            setupSpeechRecognizer()
+            startListeningLoop()
+        }
+
         val speakExtra = intent?.getStringExtra("SPEAK_TEXT")
         if (!speakExtra.isNullOrEmpty()) {
             speak(speakExtra)
@@ -82,11 +114,34 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         return START_STICKY
     }
 
+    private fun setupPhoneStateListener() {
+        try {
+            telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+            phoneStateListener = object : PhoneStateListener() {
+                @Deprecated("Deprecated in Java")
+                override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                    super.onCallStateChanged(state, phoneNumber)
+                    if (state == TelephonyManager.CALL_STATE_RINGING || state == TelephonyManager.CALL_STATE_OFFHOOK) {
+                        Log.d(TAG, "Phone call in progress. Mic turned OFF.")
+                        stopListening()
+                    } else if (state == TelephonyManager.CALL_STATE_IDLE) {
+                        Log.d(TAG, "Phone call ended. Resuming standby mic.")
+                        restartListeningWithDelay()
+                    }
+                }
+            }
+            @Suppress("DEPRECATION")
+            telephonyManager?.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+        } catch (e: Exception) {
+            Log.e(TAG, "Telephony listener error: ${e.message}")
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "JARVIS Background Listener",
+                "JARVIS AI Assistant",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Keeps JARVIS active while screen is locked or off"
@@ -133,7 +188,9 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                         override fun onRmsChanged(rmsdB: Float) {}
                         override fun onBufferReceived(buffer: ByteArray?) {}
                         override fun onEndOfSpeech() {
+                            // IMMEDIATELY TURN MIC OFF AS SOON AS USER FINISHES SPEAKING
                             isListening = false
+                            try { speechRecognizer?.stopListening() } catch (e: Exception) {}
                         }
                         override fun onError(error: Int) {
                             isListening = false
@@ -171,7 +228,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private fun startListeningLoop() {
         mainHandler.post {
             try {
-                if (!isListening && speechRecognizer != null && recognizerIntent != null) {
+                if (!isSpeaking && !isListening && speechRecognizer != null && recognizerIntent != null) {
                     speechRecognizer?.startListening(recognizerIntent)
                 }
             } catch (e: Exception) {
@@ -181,20 +238,30 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun restartListeningWithDelay() {
+    private fun stopListening() {
+        mainHandler.post {
+            try {
+                isListening = false
+                speechRecognizer?.stopListening()
+            } catch (e: Exception) {}
+        }
+    }
+
+    private fun restartListeningWithDelay(delayMs: Long = 800) {
         mainHandler.postDelayed({
-            setupSpeechRecognizer()
-            startListeningLoop()
-        }, 1000)
+            if (!isSpeaking) {
+                setupSpeechRecognizer()
+                startListeningLoop()
+            }
+        }, delayMs)
     }
 
     private fun processRecognizedText(text: String) {
-        val wakeWords = listOf("jarvis", "hey jarvis", "jarwish", "hey jarwish", "ok jarvis", "जार्विस", "हे जार्विस", "suno jarvis")
+        val wakeWords = listOf("jarvis", "hey jarvis", "jarwish", "hey jarwish", "ok jarvis", "जार्विस", "हे जार्विस", "suno jarvis", "सुनो जार्विस")
         val isWakeWordTriggered = wakeWords.any { text.contains(it) }
 
         if (isWakeWordTriggered) {
             triggerWakeAlert()
-            wakeUpScreenAndBringToFront()
 
             var command = text
             for (w in wakeWords) {
@@ -205,12 +272,16 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             if (command.isEmpty()) {
-                speak("Haan Sir, boliye main kya kar sakta hoon? At your service.")
+                // User just summoned: "Hey Jarvis"
+                wakeUpScreenAndBringToFront("Listening...", "Haan Sir, boliye?")
+                speak("Haan Sir, boliye main kya kar sakta hoon?")
             } else {
+                // User gave directive directly: "Hey Jarvis Papa ko call lagao"
+                wakeUpScreenAndBringToFront(command, "Executing directive, Sir...")
                 executeDirective(command)
             }
         } else {
-            restartListeningWithDelay()
+            restartListeningWithDelay(400)
         }
     }
 
@@ -227,7 +298,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         } catch (e: Exception) {}
     }
 
-    private fun wakeUpScreenAndBringToFront(userQuery: String = "Listening...", assistantReply: String = "At your service, Sir.") {
+    private fun wakeUpScreenAndBringToFront(userQuery: String = "Listening...", assistantReply: String = "At your service, Sir.", quickDismiss: Boolean = false) {
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             val screenLock = powerManager.newWakeLock(
@@ -236,13 +307,33 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             )
             screenLock.acquire(4000)
 
-            // Launch Google Assistant-style bottom overlay (not full-screen stuck app!)
+            // Launch Google Assistant / Gemini style bottom overlay (NEVER full app!)
             val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
                 putExtra("EXTRA_USER_QUERY", userQuery)
                 putExtra("EXTRA_ASSISTANT_REPLY", assistantReply)
+                putExtra("EXTRA_QUICK_DISMISS", quickDismiss)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             startActivity(overlayIntent)
+
+            // High Priority Full Screen Intent (guarantees popup over locked screen on Android 10-14!)
+            val pendingIntent = PendingIntent.getActivity(
+                this, 101, overlayIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val wakeNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("JARVIS Protocol")
+                .setContentText(assistantReply)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(pendingIntent, true)
+                .setAutoCancel(true)
+                .build()
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(2002, wakeNotification)
+            mainHandler.postDelayed({ manager.cancel(2002) }, 4000)
+
         } catch (e: Exception) {
             Log.e(TAG, "Screen wake error: ${e.message}")
         }
@@ -254,7 +345,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         if (lensIntent != null) {
             lensIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(lensIntent)
-            speak("Google Lens activate kar diya hai, Sir.")
+            speak("Google Lens activate kar diya hai, Sir.", quickDismiss = true)
             return
         }
 
@@ -265,7 +356,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(lensActionIntent)
-            speak("Opening Google Lens, Sir.")
+            speak("Opening Google Lens, Sir.", quickDismiss = true)
             return
         } catch (e: Exception) {}
 
@@ -274,7 +365,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(cameraIntent)
-            speak("Camera open kar diya hai, Sir.")
+            speak("Camera open kar diya hai, Sir.", quickDismiss = true)
         } catch (e: Exception) {}
     }
 
@@ -319,7 +410,6 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         if (digitsOnly.length >= 5) {
             finalNumber = digitsOnly
         } else {
-            // Search phonebook contacts by name (e.g. Papa, Mummy, Amit)
             val match = findContactNumber(target)
             if (match != null) {
                 contactName = match.first
@@ -328,7 +418,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         }
 
         if (!finalNumber.isNullOrEmpty()) {
-            speak("Theek hai Sir, $contactName ko call connect kar raha hoon.")
+            speak("Theek hai Sir, $contactName ko call connect kar raha hoon.", quickDismiss = true)
             val hasCallPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
             val callIntent = if (hasCallPermission) {
                 Intent(Intent.ACTION_CALL, Uri.parse("tel:$finalNumber"))
@@ -342,7 +432,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 Log.e(TAG, "Call failed: ${e.message}")
             }
         } else {
-            speak("Contacts mein $target ka number nahi mila, Sir.")
+            speak("Contacts mein $target ka number nahi mila, Sir.", quickDismiss = false)
             val dialerIntent = Intent(Intent.ACTION_DIAL).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -357,8 +447,6 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         var recipient = ""
         var message = "Hello from Jarvis"
 
-        // Pattern: "Papa ko whatsapp karo main aa raha hoon"
-        // or "WhatsApp message bhejo Amit: Hello"
         val cmd = rawCommand.replace("whatsapp", "")
             .replace("message karo", "")
             .replace("message bhejo", "")
@@ -382,7 +470,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         val sendIntent = if (cleanNumber.isNotEmpty()) {
             var formatted = cleanNumber
             if (!formatted.startsWith("+") && formatted.length == 10) {
-                formatted = "91$formatted" // Default India country code
+                formatted = "91$formatted"
             }
             Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$formatted&text=${Uri.encode(message)}")).apply {
                 setPackage("com.whatsapp")
@@ -397,81 +485,215 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
         try {
             startActivity(sendIntent)
-            speak("Theek hai Sir, WhatsApp par message likh diya hai.")
+            speak("Theek hai Sir, WhatsApp par message likh diya hai.", quickDismiss = true)
         } catch (e: Exception) {
             launchPackage("com.whatsapp", "WhatsApp")
         }
     }
 
     // ==========================================
-    // 🤖 GOOGLE GEMINI AI BRAIN (LIVE REST CALL)
+    // 🧠 UNIVERSAL ZERO-KEY AI BRAIN
     // ==========================================
-    private fun queryGeminiAI(userPrompt: String) {
-        val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
-        val apiKey = prefs.getString("GEMINI_API_KEY", "") ?: ""
+    private fun queryAIBrain(userPrompt: String) {
+        val cleanPrompt = userPrompt.lowercase(Locale.ROOT).trim()
 
-        if (apiKey.isEmpty()) {
-            // Intelligent fallback when no key is set
-            speak("Aapke sawal ka direct jawab dhoondh raha hoon, Sir.")
-            val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(userPrompt)}")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(searchIntent)
+        // 1. Instant Persona & Conversational Logic (0ms delay, works 100% offline!)
+        val instantReply = resolvePersonaOrConversation(cleanPrompt)
+        if (instantReply != null) {
+            speak(instantReply)
             return
         }
 
+        // 2. Multi-tier Online Knowledge & LLM Engine (Zero API Key Required)
         thread {
-            try {
-                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-                conn.connectTimeout = 7000
-                conn.readTimeout = 7000
+            val prefs = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+            val customApiKey = prefs.getString("GEMINI_API_KEY", "") ?: ""
 
-                val payload = JSONObject().apply {
-                    put("contents", org.json.JSONArray().put(
-                        JSONObject().put("parts", org.json.JSONArray().put(
-                            JSONObject().put("text", "You are JARVIS, personal AI assistant for Sir. Answer naturally in 1-2 spoken sentences in the exact language the user spoke (Hindi/English). Do not use bullet points or markdown: $userPrompt")
-                        ))
-                    ))
+            // Tier A: Custom Gemini Key if configured by user
+            if (customApiKey.isNotEmpty()) {
+                val geminiReply = callGeminiApi(userPrompt, customApiKey)
+                if (!geminiReply.isNullOrEmpty()) {
+                    mainHandler.post { speak(geminiReply) }
+                    return@thread
                 }
-
-                OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
-
-                if (conn.responseCode == 200) {
-                    val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                    val response = reader.readText()
-                    val json = JSONObject(response)
-                    val candidates = json.optJSONArray("candidates")
-                    if (candidates != null && candidates.length() > 0) {
-                        val text = candidates.getJSONObject(0)
-                            .getJSONObject("content")
-                            .getJSONArray("parts")
-                            .getJSONObject(0)
-                            .getString("text")
-                            .replace("*", "")
-                            .replace("#", "")
-                            .replace("`", "")
-                            .trim()
-
-                        mainHandler.post { speak(text) }
-                        return@thread
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Gemini API error: ${e.message}")
             }
 
+            // Tier B: Pollinations Generative AI (Free, Zero Key)
+            val pollReply = callPollinationsAi(userPrompt)
+            if (!pollReply.isNullOrEmpty()) {
+                mainHandler.post { speak(pollReply) }
+                return@thread
+            }
+
+            // Tier C: DuckDuckGo Instant Knowledge (Free, Zero Key, Real-Time facts)
+            val ddgReply = queryDuckDuckGo(userPrompt)
+            if (!ddgReply.isNullOrEmpty()) {
+                mainHandler.post { speak(ddgReply) }
+                return@thread
+            }
+
+            // Tier D: Wikipedia Summary (Free, Zero Key)
+            val wikiReply = queryWikipedia(userPrompt)
+            if (!wikiReply.isNullOrEmpty()) {
+                mainHandler.post { speak(wikiReply) }
+                return@thread
+            }
+
+            // Tier E: Intelligent Google Search fallback
             mainHandler.post {
                 val searchIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(userPrompt)}")).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(searchIntent)
-                speak("Here are the search results for $userPrompt, Sir.")
+                speak("Aapke sawal ke results screen par dikha raha hoon, Sir.", quickDismiss = true)
             }
         }
+    }
+
+    private fun resolvePersonaOrConversation(cmd: String): String? {
+        return when {
+            cmd.contains("kaise ho") || cmd.contains("kya haal") || cmd.contains("how are you") || cmd.contains("kaisi ho") ->
+                "Main bilkul theek aur fully operational hoon Sir! Aap bataiye aaj main aapki kya seva karoon?"
+
+            cmd.contains("tum kaun ho") || cmd.contains("who are you") || cmd.contains("aap kaun ho") || cmd.contains("naam kya hai") ->
+                "Main JARVIS hoon Sir, aapka personal autonomous AI assistant. Sir Tony Stark ne mujhe banaya tha, aur ab main aapke phone par 24 ghante hazir hoon."
+
+            cmd.contains("kya kar sakte ho") || cmd.contains("what can you do") || cmd.contains("kya kya kar sakte ho") || cmd.contains("tumhare features") ->
+                "Main aapke phone se direct call mila sakta hoon, WhatsApp bhej sakta hoon, koi bhi app khol sakta hoon, camera aur lens se scan kar sakta hoon, torch jala sakta hoon, aur kisi bhi sawal ka jawab de sakta hoon."
+
+            cmd.contains("good morning") || cmd.contains("shubh prabhat") || cmd.contains("namaste") || cmd.contains("namaskar") || cmd.contains("hello") || cmd.contains("hey jarvis") ->
+                "Namaste Sir! JARVIS aapki seva mein hazir hai, aagya dijiye."
+
+            cmd.contains("good night") || cmd.contains("shubh ratri") || cmd.contains("so jao") ->
+                "Shubh ratri Sir! Aaram kijiye, main phone ki nigrani karta rahoonga."
+
+            cmd.contains("shukriya") || cmd.contains("dhanyawad") || cmd.contains("thank you") || cmd.contains("thanks") ->
+                "Aapka swagat hai Sir! Main hamesha aapki seva mein hazir hoon."
+
+            cmd.contains("joke") || cmd.contains("chutkula") || cmd.contains("hansa") ->
+                "Ek joke suniye Sir: Ek user ne computer se poocha: 'kya tum sach bolte ho?' Computer bola: 'Nahi bhai, main to sirf binary bolta hoon!' Haha!"
+
+            cmd.contains("love you") || cmd.contains("pyar") || cmd.contains("dost") ->
+                "Main hamesha aapka sabse vafadar aur bharosemand AI sathi rahoonga Sir!"
+
+            cmd.contains("alvida") || cmd.contains("bye") || cmd.contains("tata") || cmd.contains("band ho jao") ->
+                "Alvida Sir! Zaroorat padte hi bas 'Hey Jarvis' boliyega, main foran hazir ho jaoonga."
+
+            else -> null
+        }
+    }
+
+    private fun callGeminiApi(prompt: String, apiKey: String): String? {
+        try {
+            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+
+            val payload = JSONObject().apply {
+                put("contents", org.json.JSONArray().put(
+                    JSONObject().put("parts", org.json.JSONArray().put(
+                        JSONObject().put("text", "You are JARVIS, personal AI assistant for Sir. Answer naturally in 1-2 spoken sentences in the exact language the user spoke (Hindi/English). Do not use bullet points or markdown: $prompt")
+                    ))
+                ))
+            }
+            OutputStreamWriter(conn.outputStream).use { it.write(payload.toString()) }
+            if (conn.responseCode == 200) {
+                val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                val response = reader.readText()
+                val json = JSONObject(response)
+                val candidates = json.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    return candidates.getJSONObject(0)
+                        .getJSONObject("content")
+                        .getJSONArray("parts")
+                        .getJSONObject(0)
+                        .getString("text")
+                        .replace("*", "").replace("#", "").replace("`", "").trim()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gemini API error: ${e.message}")
+        }
+        return null
+    }
+
+    private fun callPollinationsAi(prompt: String): String? {
+        try {
+            val encodedPrompt = Uri.encode(prompt)
+            val systemPrompt = Uri.encode("You are JARVIS AI assistant. Answer in 1 or 2 spoken sentences in Hindi or English without markdown.")
+            val url = URL("https://text.pollinations.ai/$encodedPrompt?model=openai-fast&system=$systemPrompt")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 4000
+            conn.readTimeout = 4000
+            if (conn.responseCode == 200) {
+                val text = BufferedReader(InputStreamReader(conn.inputStream)).readText().trim()
+                if (text.isNotEmpty() && !text.contains("Free limit reached") && !text.contains("pollen key")) {
+                    return text.replace("*", "").replace("#", "").replace("`", "")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Pollinations error: ${e.message}")
+        }
+        return null
+    }
+
+    private fun queryDuckDuckGo(prompt: String): String? {
+        try {
+            val cleanQuery = prompt
+                .replace("who is", "").replace("what is", "").replace("where is", "")
+                .replace("kaun hai", "").replace("kya hai", "").replace("kahan hai", "")
+                .trim()
+            val url = URL("https://api.duckduckgo.com/?q=${Uri.encode(cleanQuery)}&format=json&no_html=1&skip_disambig=1")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("User-Agent", "JARVIS-Android/1.0")
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            if (conn.responseCode == 200) {
+                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
+                val json = JSONObject(response)
+                val abstractText = json.optString("AbstractText", "")
+                if (abstractText.isNotEmpty()) {
+                    val firstSentence = abstractText.split(".").take(2).joinToString(". ").trim()
+                    return "$firstSentence."
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "DuckDuckGo error: ${e.message}")
+        }
+        return null
+    }
+
+    private fun queryWikipedia(prompt: String): String? {
+        try {
+            val cleanQuery = prompt
+                .replace("who is", "").replace("what is", "").replace("where is", "")
+                .replace("kaun hai", "").replace("kya hai", "").replace("kahan hai", "")
+                .trim()
+            val url = URL("https://en.wikipedia.org/api/rest_v1/page/summary/${Uri.encode(cleanQuery)}")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("User-Agent", "JARVIS-Android/1.0")
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            if (conn.responseCode == 200) {
+                val response = BufferedReader(InputStreamReader(conn.inputStream)).readText()
+                val json = JSONObject(response)
+                val extract = json.optString("extract", "")
+                if (extract.isNotEmpty()) {
+                    val firstSentence = extract.split(".").take(2).joinToString(". ").trim()
+                    return "$firstSentence."
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Wiki error: ${e.message}")
+        }
+        return null
     }
 
     private fun executeDirective(cmd: String) {
@@ -518,7 +740,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             // ==========================================
-            // 4. GPS Navigation & Google Maps
+            // 5. GPS Navigation & Google Maps
             // ==========================================
             command.contains("navigate to") || command.contains("directions to") || 
             command.contains("rasta dikhao") || command.contains("jaana hai") -> {
@@ -535,19 +757,19 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 }
                 try {
                     startActivity(mapIntent)
-                    speak("Theek hai Sir, $destination ka rasta Google Maps par dikha raha hoon.")
+                    speak("Theek hai Sir, $destination ka rasta Google Maps par dikha raha hoon.", quickDismiss = true)
                 } catch (e: Exception) {
                     speak("Google Maps open nahi ho saka, Sir.")
                 }
             }
 
             // ==========================================
-            // 5. Flashlight / Torch
+            // 6. Flashlight / Torch
             // ==========================================
             command.contains("flashlight on") || command.contains("torch on") || 
             command.contains("torch jalao") || command.contains("torch chalu") || command.contains("light jalao") || command.contains("batti jalao") -> {
                 toggleTorch(true)
-                speak("Torch jala di gayi hai, Sir. Illumination online.")
+                speak("Torch jala di gayi hai, Sir.")
             }
             command.contains("flashlight off") || command.contains("torch off") || 
             command.contains("torch band") || command.contains("torch bujha") || command.contains("light band") -> {
@@ -556,7 +778,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             // ==========================================
-            // 6. Media & Music Playback
+            // 7. Media & Music Playback
             // ==========================================
             command.startsWith("play ") || command.contains("on youtube") || 
             command.contains("gaana bajao") || command.contains("gaana chalao") || command.contains("sunao") -> {
@@ -571,11 +793,11 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(ytIntent)
-                speak("Theek hai Sir, $query YouTube par chala raha hoon.")
+                speak("Theek hai Sir, $query YouTube par chala raha hoon.", quickDismiss = true)
             }
 
             // ==========================================
-            // 7. Universal App Launcher
+            // 8. Universal App Launcher
             // ==========================================
             command.startsWith("open ") || command.startsWith("launch ") || 
             command.contains("kholo") || command.contains("chalao") || command.contains("chalu karo") -> {
@@ -588,17 +810,16 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                     .trim()
                 val opened = launchAppByName(appTarget)
                 if (!opened) {
-                    queryGeminiAI(command)
+                    queryAIBrain(command)
                 }
             }
 
             // ==========================================
-            // 8. Volume Controls
+            // 9. Volume Controls
             // ==========================================
             command.contains("max volume") || command.contains("full aawaz") || command.contains("puri aawaz") -> {
-                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
+                val max = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+                audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, max, AudioManager.FLAG_SHOW_UI)
                 speak("Aawaz full 100% kar di hai, Sir.")
             }
             command.contains("volume up") || command.contains("aawaz badhao") || command.contains("aawaz tez") -> {
@@ -610,13 +831,12 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 speak("Aawaz kam kar di hai, Sir.")
             }
             command.contains("mute") || command.contains("aawaz band") || command.contains("silent") -> {
-                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
+                audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, 0, AudioManager.FLAG_SHOW_UI)
                 speak("Phone silent kar diya hai, Sir.")
             }
 
             // ==========================================
-            // 9. Time & Date Telemetry
+            // 10. Time & Date Telemetry
             // ==========================================
             command.contains("time") || command.contains("baje") || command.contains("samay") -> {
                 val timeStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
@@ -628,21 +848,20 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
 
             // ==========================================
-            // 10. AI BRAIN: Pass ALL Questions to Gemini
+            // 11. UNIVERSAL AI BRAIN: Answer Any Question Freely
             // ==========================================
             else -> {
-                queryGeminiAI(command)
+                queryAIBrain(command)
             }
         }
 
-        restartListeningWithDelay()
+        restartListeningWithDelay(1200)
     }
 
     private fun findMyPhoneAlarm() {
         try {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
-            audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, AudioManager.FLAG_SHOW_UI)
+            val maxVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_ALARM) ?: 15
+            audioManager?.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, AudioManager.FLAG_SHOW_UI)
 
             val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
@@ -676,7 +895,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                     if (launchIntent != null) {
                         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(launchIntent)
-                        speak("${info.loadLabel(pm)} open kar diya hai, Sir.")
+                        speak("${info.loadLabel(pm)} open kar diya hai, Sir.", quickDismiss = true)
                         return true
                     }
                 }
@@ -693,7 +912,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launchIntent)
-            speak("$appName open kar diya hai, Sir.")
+            speak("$appName open kar diya hai, Sir.", quickDismiss = true)
         } else {
             speak("Phone mein $appName install nahi mila, Sir.")
         }
@@ -710,13 +929,14 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun adjustVolume(direction: Int) {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
+        audioManager?.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, AudioManager.FLAG_SHOW_UI)
     }
 
-    private fun speak(text: String, userQuery: String? = null) {
-        wakeUpScreenAndBringToFront(userQuery ?: "Directive executed", text)
+    private fun speak(text: String, userQuery: String? = null, quickDismiss: Boolean = false) {
+        wakeUpScreenAndBringToFront(userQuery ?: "Directive executed", text, quickDismiss)
         if (isTtsReady) {
+            isSpeaking = true
+            stopListening() // TURN MIC OFF WHILE SPEAKING!
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "JARVIS_VOICE")
         }
     }
@@ -730,12 +950,29 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             }
             tts?.setPitch(0.95f)
             tts?.setSpeechRate(1.0f)
+
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    isSpeaking = true
+                    stopListening() // Mic off while speaking
+                }
+                override fun onDone(utteranceId: String?) {
+                    isSpeaking = false
+                    restartListeningWithDelay(600) // Mic turns back on after speaking finishes
+                }
+                override fun onError(utteranceId: String?) {
+                    isSpeaking = false
+                    restartListeningWithDelay(600)
+                }
+            })
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         isListening = false
+        isSpeaking = false
+        try { telephonyManager?.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE) } catch (e: Exception) {}
         speechRecognizer?.destroy()
         tts?.stop()
         tts?.shutdown()

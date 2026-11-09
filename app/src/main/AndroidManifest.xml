@@ -18,6 +18,7 @@
     <!-- Calling, Contacts, Flashlight & Device Controls -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -71,14 +72,24 @@
             </intent-filter>
         </activity>
 
-        <!-- Google Assistant-Style Floating Bottom Sheet Overlay -->
+        <!-- Google Assistant / Gemini Style Floating Translucent Bottom Overlay -->
         <activity
             android:name=".AssistantOverlayActivity"
-            android:exported="false"
+            android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.JarvisOverlay" />
+            android:theme="@style/Theme.JarvisOverlay">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <!-- Persistent 24/7 Background Service -->
         <service

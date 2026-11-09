@@ -1,5 +1,6 @@
 package com.stark.jarvis
 
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,6 +10,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -31,10 +33,20 @@ class AssistantOverlayActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_assistant_overlay)
 
-        // Wake screen if locked
+        // Ensure window pops up over lockscreen and wakes screen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+            km.requestDismissKeyguard(this, null)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+            )
         }
 
         overlayRoot = findViewById(R.id.overlayRoot)
@@ -46,6 +58,7 @@ class AssistantOverlayActivity : AppCompatActivity() {
 
         val query = intent.getStringExtra("EXTRA_USER_QUERY") ?: "Listening..."
         val reply = intent.getStringExtra("EXTRA_ASSISTANT_REPLY") ?: "At your service, Sir."
+        val isQuickDismiss = intent.getBooleanExtra("EXTRA_QUICK_DISMISS", false)
 
         overlayUserText.text = query
         overlayResponseText.text = reply
@@ -70,12 +83,14 @@ class AssistantOverlayActivity : AppCompatActivity() {
         overlayMicBtn.setOnClickListener {
             restartListeningService()
             overlayUserText.text = "Listening..."
-            overlayResponseText.text = "Say your directive..."
+            overlayResponseText.text = "Haan Sir, boliye..."
             resetAutoDismissTimer(5000)
         }
 
-        // 5. Automatic Auto-Dismiss (Closes automatically in 3.5 seconds so screen is never stuck!)
-        resetAutoDismissTimer(3500)
+        // 5. Google Assistant / Gemini Auto-Dismiss:
+        // Closes automatically so phone screen is never stuck!
+        val delay = if (isQuickDismiss) 1200L else 3200L
+        resetAutoDismissTimer(delay)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -83,9 +98,13 @@ class AssistantOverlayActivity : AppCompatActivity() {
         setIntent(intent)
         val query = intent.getStringExtra("EXTRA_USER_QUERY") ?: "Listening..."
         val reply = intent.getStringExtra("EXTRA_ASSISTANT_REPLY") ?: "At your service, Sir."
+        val isQuickDismiss = intent.getBooleanExtra("EXTRA_QUICK_DISMISS", false)
+
         overlayUserText.text = query
         overlayResponseText.text = reply
-        resetAutoDismissTimer(3500)
+
+        val delay = if (isQuickDismiss) 1200L else 3200L
+        resetAutoDismissTimer(delay)
     }
 
     private fun resetAutoDismissTimer(delayMillis: Long) {
