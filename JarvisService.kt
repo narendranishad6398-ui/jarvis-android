@@ -56,6 +56,23 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private var isDestroyed = false
     private var isSpeaking = false
     private var isOverlayActive = false
+    private var isFollowUpListening = false
+    private var followUpRunnable: Runnable? = null
+
+    private fun scheduleFollowUpTimeout(delayMs: Long = 8000L) {
+        followUpRunnable?.let { mainHandler.removeCallbacks(it) }
+        followUpRunnable = Runnable {
+            isFollowUpListening = false
+            CommandExecutor.pendingCallChoices = emptyList()
+            Log.d(TAG, "Follow-up listening window expired. Reverting to standby wake-word mode.")
+        }
+        mainHandler.postDelayed(followUpRunnable!!, delayMs)
+    }
+
+    private fun cancelFollowUpTimeout() {
+        followUpRunnable?.let { mainHandler.removeCallbacks(it) }
+        followUpRunnable = null
+    }
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -70,6 +87,12 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                 Intent.ACTION_SCREEN_ON -> {
                     Log.d(TAG, "Screen ON detected.")
                     restartListeningLoop(500)
+                }
+                Intent.ACTION_USER_PRESENT -> {
+                    Log.d(TAG, "Screen unlocked (ACTION_USER_PRESENT). Greeting Boss...")
+                    mainHandler.postDelayed({
+                        speakTextOutLoud("Hello Boss, kya seva karu?")
+                    }, 500)
                 }
             }
         }
@@ -108,6 +131,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             val filter = IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_USER_PRESENT)
             }
             registerReceiver(screenReceiver, filter)
         } catch (e: Exception) {
@@ -180,7 +204,9 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
                 override fun onDone(utteranceId: String?) {
                     isSpeaking = false
-                    restartListeningLoop(1000)
+                    isFollowUpListening = true
+                    scheduleFollowUpTimeout(8000L)
+                    restartListeningLoop(350)
                 }
 
                 override fun onError(utteranceId: String?) {
