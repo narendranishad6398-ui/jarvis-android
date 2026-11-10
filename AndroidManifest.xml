@@ -106,7 +106,7 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- Universal Phone & In-App Control Accessibility Service -->
+        <!-- Universal Phone & In-App Control Accessibility Service with Config -->
         <service
             android:name=".JarvisAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -114,6 +114,9 @@
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
         <!-- Auto-restart on Phone Boot -->

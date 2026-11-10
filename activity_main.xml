@@ -359,6 +359,29 @@
                 android:textColorHint="#475569"
                 android:textSize="13sp" />
 
+            <!-- 4. Screen Lock PIN (for auto-unlock if PIN set) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Phone Screen PIN (Optional - for hands-free unlock):"
+                android:textColor="#94A3B8"
+                android:textSize="11sp" />
+
+            <EditText
+                android:id="@+id/screenPinInput"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:layout_marginTop="4dp"
+                android:background="#151D33"
+                android:hint="e.g. 1234 (Leave blank if swipe only)"
+                android:inputType="numberPassword"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:textColor="#FFFFFF"
+                android:textColorHint="#475569"
+                android:textSize="13sp" />
+
             <Button
                 android:id="@+id/voicePasswordBtn"
                 android:layout_width="match_parent"

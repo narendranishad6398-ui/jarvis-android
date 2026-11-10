@@ -5,7 +5,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.media.AudioManager
 import android.net.wifi.WifiManager
@@ -55,6 +57,25 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
     private var isSpeaking = false
     private var isOverlayActive = false
 
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    Log.d(TAG, "Screen OFF detected. Maintaining 24/7 wake lock...")
+                    if (wakeLock?.isHeld != true) {
+                        try { wakeLock?.acquire(24 * 60 * 60 * 1000L) } catch (ignored: Exception) {}
+                    }
+                    restartListeningLoop(1000)
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    Log.d(TAG, "Screen ON detected.")
+                    restartListeningLoop(500)
+                }
+            }
+        }
+    }
+
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Initializing JARVIS background ear...")
@@ -82,6 +103,16 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
 
         tts = TextToSpeech(this, this)
         setupSpeechRecognizer()
+
+        try {
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            }
+            registerReceiver(screenReceiver, filter)
+        } catch (e: Exception) {
+            Log.w(TAG, "Screen receiver register error: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -327,6 +358,36 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             "\u091c\u093e\u0930\u094d\u0935\u093f\u0938", "\u091c\u093e\u0930\u094d\u0935\u093f\u0936"
         )
 
+        // 0. Continuous Follow-Up Listening Mode (multi-turn hands-free listening)
+        if (isFollowUpListening) {
+            cancelFollowUpTimeout()
+            isFollowUpListening = false
+
+            // Disambiguation calling response
+            if (CommandExecutor.hasPendingCallChoices()) {
+                for (cand in matches) {
+                    if (CommandExecutor.handlePendingCallChoice(this, cand) { reply, _ -> speakTextOutLoud(reply) }) {
+                        return
+                    }
+                }
+            }
+
+            val cand = matches.firstOrNull()?.trim() ?: ""
+            if (cand.isNotEmpty()) {
+                val lower = cand.lowercase(Locale.ROOT)
+                if (lower.contains("stop") || lower.contains("chup") || lower.contains("kuch nahi") ||
+                    lower.contains("cancel") || lower.contains("so jao") || lower == "no" || lower == "nahi") {
+                    speakTextOutLoud("Ji Boss, standing by.")
+                    return
+                }
+                stopListening()
+                CommandExecutor.execute(this, cand) { reply, _ ->
+                    speakTextOutLoud(reply)
+                }
+                return
+            }
+        }
+
         for (candidate in matches) {
             val lower = candidate.lowercase(Locale.ROOT).trim()
             val words = lower.split("\\s+".toRegex())
@@ -348,7 +409,7 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
                     val acc = JarvisAccessibilityService.instance
                     if (acc != null) {
                         acc.unlockWithSwipeGesture { success ->
-                            speakTextOutLoud(if (success) "Voice password verified, Boss! Screen unlock kar di hai." else "Voice password verified Boss.")
+                            speakTextOutLoud(if (success) "Hello Boss, kya seva karu?" else "Voice password verified Boss.")
                         }
                     } else {
                         speakTextOutLoud("Voice password verified Boss. Accessibility enable karein swipe unlock ke liye.")
@@ -412,7 +473,11 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             if (detectedWake != null) {
                 val command = lower.substringAfter(detectedWake).trim()
                 triggerWakeAlert()
-                dispatchDirectiveFast(command)
+                if (command.isNotEmpty()) {
+                    dispatchDirectiveFast(command)
+                } else {
+                    speakTextOutLoud("Hello Boss! Boliye kya seva karu?")
+                }
                 return
             }
         }
@@ -425,22 +490,13 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
      * in the background so the underlying active app is NEVER covered by an overlay!
      */
     private fun dispatchDirectiveFast(command: String) {
-        val lower = command.lowercase(Locale.ROOT)
-        val isFastDirectAction = lower.contains("photo") || lower.contains("video") ||
-                lower.contains("type ") || lower.contains("likho ") ||
-                lower.contains("click ") || lower.contains("dabao ") ||
-                lower.contains("scroll") || lower.contains("torch") ||
-                lower.contains("batti") || lower.contains("wifi") ||
-                lower.contains("hotspot") || lower.contains("bluetooth") ||
-                lower.contains("net ") || lower.contains("data ")
-
-        if (isFastDirectAction && command.isNotEmpty()) {
+        if (command.isNotEmpty()) {
             stopListening()
             CommandExecutor.execute(this, command) { reply, _ ->
                 speakTextOutLoud(reply)
             }
         } else {
-            wakeUpAssistantOverlay(command)
+            speakTextOutLoud("Hello Boss! Boliye kya seva karu?")
         }
     }
 
@@ -523,9 +579,21 @@ class JarvisService : Service(), TextToSpeech.OnInitListener {
             .build()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Log.d(TAG, "JARVIS task removed. Auto-restarting background ear...")
+        val restartIntent = Intent(applicationContext, JarvisService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            applicationContext.startForegroundService(restartIntent)
+        } else {
+            applicationContext.startService(restartIntent)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isDestroyed = true
+        try { unregisterReceiver(screenReceiver) } catch (ignored: Exception) {}
         stopListening()
         muteRecognizerBeep(false)
 

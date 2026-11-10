@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private var customWakeWordInput: EditText? = null
     private var customUnlockInput: EditText? = null
     private var customLockInput: EditText? = null
+    private var screenPinInput: EditText? = null
     private var voicePasswordBtn: Button? = null
     private var silentEarSwitch: Switch? = null
 
@@ -97,6 +98,8 @@ class MainActivity : AppCompatActivity() {
             showGeminiKeyDialog()
         }
 
+        autoStartJarvisServiceIfReady()
+
         testMicBtn.setOnClickListener {
             val overlayIntent = Intent(this, AssistantOverlayActivity::class.java).apply {
                 putExtra("EXTRA_START_LISTENING", true)
@@ -109,6 +112,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkAccessibilityStatus()
+        autoStartJarvisServiceIfReady()
+    }
+
+    private fun autoStartJarvisServiceIfReady() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startJarvisService()
+        }
     }
 
     private fun setupHardwareToggles() {
@@ -202,6 +212,7 @@ class MainActivity : AppCompatActivity() {
         customWakeWordInput = findViewById(R.id.customWakeWordInput)
         customUnlockInput = findViewById(R.id.customUnlockInput)
         customLockInput = findViewById(R.id.customLockInput)
+        screenPinInput = findViewById(R.id.screenPinInput)
         voicePasswordBtn = findViewById(R.id.voicePasswordBtn)
         silentEarSwitch = findViewById(R.id.silentEarSwitch)
 
@@ -209,11 +220,13 @@ class MainActivity : AppCompatActivity() {
         val savedWake = prefs.getString("CUSTOM_WAKE_WORD", "") ?: ""
         val savedUnlock = prefs.getString("CUSTOM_UNLOCK_PHRASE", "khul ja sim sim") ?: "khul ja sim sim"
         val savedLock = prefs.getString("CUSTOM_LOCK_PHRASE", "phone lock karo") ?: "phone lock karo"
+        val savedPin = prefs.getString("SCREEN_PIN", "") ?: ""
         val isSilent = prefs.getBoolean("SILENT_EAR_MODE", true)
 
         if (savedWake.isNotEmpty()) customWakeWordInput?.setText(savedWake)
         customUnlockInput?.setText(savedUnlock)
         customLockInput?.setText(savedLock)
+        if (savedPin.isNotEmpty()) screenPinInput?.setText(savedPin)
         silentEarSwitch?.isChecked = isSilent
 
         silentEarSwitch?.setOnCheckedChangeListener { _, isChecked ->
@@ -225,11 +238,13 @@ class MainActivity : AppCompatActivity() {
             val newWake = customWakeWordInput?.text?.toString()?.trim() ?: ""
             val newUnlock = customUnlockInput?.text?.toString()?.trim() ?: "khul ja sim sim"
             val newLock = customLockInput?.text?.toString()?.trim() ?: "phone lock karo"
+            val newPin = screenPinInput?.text?.toString()?.trim() ?: ""
 
             prefs.edit()
                 .putString("CUSTOM_WAKE_WORD", newWake)
                 .putString("CUSTOM_UNLOCK_PHRASE", newUnlock)
                 .putString("CUSTOM_LOCK_PHRASE", newLock)
+                .putString("SCREEN_PIN", newPin)
                 .apply()
 
             val msg = "Custom Voice Commands Saved!\nWake: ${if (newWake.isNotEmpty()) newWake else "Hey Jarvis"}\nUnlock: '$newUnlock'\nLock: '$newLock'"

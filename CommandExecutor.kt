@@ -150,7 +150,13 @@ class JarvisAccessibilityService : AccessibilityService() {
             dispatchGesture(gestureBuilder.build(), object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     Log.d(TAG, "Unlock swipe gesture succeeded.")
-                    callback?.invoke(true)
+                    val prefs = getSharedPreferences("JARVIS_PREFS", Context.MODE_PRIVATE)
+                    val savedPin = prefs.getString("SCREEN_PIN", "") ?: ""
+                    if (savedPin.isNotEmpty()) {
+                        enterPinAndUnlock(savedPin, callback)
+                    } else {
+                        callback?.invoke(true)
+                    }
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
@@ -162,6 +168,60 @@ class JarvisAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Swipe gesture failed: ${e.message}")
             callback?.invoke(false)
         }
+    }
+
+    fun enterPinAndUnlock(pin: String, callback: ((Boolean) -> Unit)? = null) {
+        val cleanPin = pin.trim()
+        if (cleanPin.isEmpty()) {
+            callback?.invoke(true)
+            return
+        }
+
+        var digitIndex = 0
+        fun clickNextDigit() {
+            if (digitIndex >= cleanPin.length) {
+                mainHandler.postDelayed({
+                    clickElementByText("ok")
+                    clickElementByText("enter")
+                    callback?.invoke(true)
+                }, 250)
+                return
+            }
+
+            val d = cleanPin[digitIndex].toString()
+            val roots = getAllActiveRoots()
+            var clicked = false
+            for (root in roots) {
+                val nodes = mutableListOf<AccessibilityNodeInfo>()
+                fun findDigit(n: AccessibilityNodeInfo) {
+                    val t = n.text?.toString() ?: ""
+                    val cd = n.contentDescription?.toString() ?: ""
+                    if (t == d || cd == d || cd.startsWith(d)) {
+                        nodes.add(n)
+                    }
+                    for (i in 0 until n.childCount) {
+                        n.getChild(i)?.let { findDigit(it) }
+                    }
+                }
+                findDigit(root)
+                for (node in nodes) {
+                    var target: AccessibilityNodeInfo? = node
+                    while (target != null && !target.isClickable) {
+                        target = target.parent
+                    }
+                    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        clicked = true
+                        break
+                    }
+                }
+                if (clicked) break
+            }
+
+            digitIndex++
+            mainHandler.postDelayed({ clickNextDigit() }, 200)
+        }
+
+        mainHandler.postDelayed({ clickNextDigit() }, 350)
     }
 
     fun clickCameraShutter(callback: ((Boolean) -> Unit)? = null) {
@@ -537,6 +597,47 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
         return false
     }
+
+    fun clickSendButton(retries: Int = 8, delayMs: Long = 350, onComplete: ((Boolean) -> Unit)? = null) {
+        fun attempt(remaining: Int) {
+            val roots = getAllActiveRoots()
+            for (root in roots) {
+                val sendNodes = mutableListOf<AccessibilityNodeInfo>()
+                fun findSend(n: AccessibilityNodeInfo) {
+                    val desc = n.contentDescription?.toString()?.lowercase(Locale.ROOT) ?: ""
+                    val text = n.text?.toString()?.lowercase(Locale.ROOT) ?: ""
+                    val res = n.viewIdResourceName?.lowercase(Locale.ROOT) ?: ""
+                    if (desc == "send" || desc.contains("send") || desc.contains("bheje") || desc.contains("bhejo") ||
+                        text == "send" || text.contains("send") || text.contains("bheje") ||
+                        res.contains("send") || res.contains("action_send") || res.contains("send_button") ||
+                        res.contains("button_send") || res.contains("input_send_button")) {
+                        sendNodes.add(n)
+                    }
+                    for (i in 0 until n.childCount) {
+                        n.getChild(i)?.let { findSend(it) }
+                    }
+                }
+                findSend(root)
+                for (node in sendNodes) {
+                    var target: AccessibilityNodeInfo? = node
+                    while (target != null && !target.isClickable) {
+                        target = target.parent
+                    }
+                    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                        Log.d(TAG, "Send button clicked via accessibility!")
+                        onComplete?.invoke(true)
+                        return
+                    }
+                }
+            }
+            if (remaining > 0) {
+                mainHandler.postDelayed({ attempt(remaining - 1) }, delayMs)
+            } else {
+                onComplete?.invoke(false)
+            }
+        }
+        mainHandler.postDelayed({ attempt(retries) }, delayMs)
+    }
 }
 
 /**
@@ -549,9 +650,61 @@ object CommandExecutor {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val executorService = java.util.concurrent.Executors.newSingleThreadExecutor()
 
+    data class ContactChoice(val name: String, val number: String)
+    @Volatile
+    var pendingCallChoices: List<ContactChoice> = emptyList()
+
+    fun hasPendingCallChoices(): Boolean = pendingCallChoices.isNotEmpty()
+
+    fun handlePendingCallChoice(context: Context, spokenText: String, callback: (String, Boolean) -> Unit): Boolean {
+        if (pendingCallChoices.isEmpty()) return false
+        val clean = spokenText.trim().lowercase(Locale.ROOT)
+
+        if (clean.contains("cancel") || clean.contains("kisi ko nahi") || clean.contains("chup") ||
+            clean.contains("rehne do") || clean == "nahi" || clean == "no") {
+            pendingCallChoices = emptyList()
+            callback("Theek hai Boss, call cancel kar di.", true)
+            return true
+        }
+
+        val choiceByIndex = when {
+            clean.contains("pehla") || clean.contains("first") || clean == "1" || clean.contains("number 1") -> pendingCallChoices.getOrNull(0)
+            clean.contains("dusra") || clean.contains("second") || clean == "2" || clean.contains("number 2") -> pendingCallChoices.getOrNull(1)
+            clean.contains("teesra") || clean.contains("tisra") || clean.contains("third") || clean == "3" || clean.contains("number 3") -> pendingCallChoices.getOrNull(2)
+            clean.contains("chautha") || clean.contains("fourth") || clean == "4" || clean.contains("number 4") -> pendingCallChoices.getOrNull(3)
+            else -> null
+        }
+
+        if (choiceByIndex != null) {
+            val target = choiceByIndex
+            pendingCallChoices = emptyList()
+            dialOrCallNumber(context, target.number, target.name, callback)
+            return true
+        }
+
+        val matched = pendingCallChoices.find { choice ->
+            val n = choice.name.lowercase(Locale.ROOT)
+            clean.contains(n) || n.contains(clean) || clean.split(" ").any { part -> part.length > 2 && n.contains(part) }
+        }
+
+        if (matched != null) {
+            pendingCallChoices = emptyList()
+            dialOrCallNumber(context, matched.number, matched.name, callback)
+            return true
+        }
+
+        return false
+    }
+
     fun execute(context: Context, rawCommand: String, callback: (String, Boolean) -> Unit) {
         val command = rawCommand.lowercase(Locale.ROOT).trim()
         Log.d(TAG, "Executing directive: '$command'")
+
+        if (pendingCallChoices.isNotEmpty()) {
+            if (handlePendingCallChoice(context, command, callback)) {
+                return
+            }
+        }
 
         when {
             // 1. Voice Screen Lock (Instant)
@@ -791,8 +944,9 @@ object CommandExecutor {
                 }
             }
 
-            // Control Panel: Location / GPS
-            (command.contains("location") && !command.contains("dikhao") && !command.contains("kholo")) || command.contains("gps") -> {
+            // Control Panel: Location / GPS (Strict toggle so it doesn't conflict with Maps Navigation)
+            (command.contains("gps") || (command.contains("location") && (command.contains("on") || command.contains("off") || command.contains("chalu") || command.contains("band")))) &&
+            !command.contains("rasta") && !command.contains("dikhao") && !command.contains("dalo") && !command.contains("jaana") && !command.contains("le chalo") -> {
                 val turnOn = !command.contains("off") && !command.contains("band")
                 val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                 try { context.startActivity(intent) } catch (e: Exception) {}
@@ -871,6 +1025,16 @@ object CommandExecutor {
                 callback(if (clicked) "Theek hai Boss, navigation band kar di hai." else "Navigation close karne ka prayas kiya Boss.", true)
             }
 
+            // WhatsApp Direct Messaging & Auto-Send
+            isWhatsAppCommand(command) -> {
+                handleWhatsAppMessaging(context, command, callback)
+            }
+
+            // Instagram Direct Messaging & Auto-Send
+            isInstagramCommand(command) -> {
+                handleInstagramMessaging(context, command, callback)
+            }
+
             // 20. Launch Apps by Voice (Flexible position)
             isOpenAppCommand(command) -> {
                 val appTarget = extractAppTarget(command)
@@ -919,10 +1083,6 @@ object CommandExecutor {
                 callback(if (ended) "Call disconnect kar diya gaya hai, Boss." else "Call end karne ka prayas kiya, Boss.", true)
             }
 
-            // 24. WhatsApp Direct Messaging
-            command.contains("whatsapp") || command.contains("\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a") -> {
-                sendWhatsAppToContact(context, command, callback)
-            }
 
             // 25. Find My Phone / Emergency Siren
             command.contains("find my phone") || command.contains("mera phone kahan") || command.contains("ring loudly") -> {
@@ -1280,6 +1440,17 @@ object CommandExecutor {
             val (name, number) = match
             dialOrCallNumber(context, number, name, callback)
         } else {
+            // First-Letter Contact Disambiguation Fallback
+            val firstChar = target.trim().firstOrNull()?.lowercaseChar()
+            if (firstChar != null && firstChar.isLetter()) {
+                val similar = findContactsStartingWith(context, firstChar)
+                if (similar.isNotEmpty()) {
+                    pendingCallChoices = similar.take(4)
+                    val namesList = pendingCallChoices.joinToString(", ") { it.name }
+                    callback("Boss, '$target' naam se contact nahi mila. '${firstChar.uppercase()}' se ye contacts mile hain: $namesList. Inme se kisko call lagau?", false)
+                    return
+                }
+            }
             callback("Boss, contact list mein '$target' ka number nahi mila.", false)
         }
     }
@@ -1310,39 +1481,262 @@ object CommandExecutor {
         }
     }
 
-    private fun sendWhatsAppToContact(context: Context, command: String, callback: (String, Boolean) -> Unit) {
-        val target = command
-            .replace("whatsapp par", "")
-            .replace("whatsapp pe", "")
-            .replace("whatsapp me", "")
-            .replace("whatsapp", "")
-            .replace("message bhejo", "")
-            .replace("bhejo", "")
-            .replace("ko", "")
+    private fun findContactsStartingWith(context: Context, initial: Char): List<ContactChoice> {
+        val results = mutableListOf<ContactChoice>()
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return results
+        }
+        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val projection = arrayOf(
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+            ContactsContract.CommonDataKinds.Phone.NUMBER
+        )
+        var cursor: Cursor? = null
+        try {
+            cursor = context.contentResolver.query(uri, projection, null, null, null)
+            if (cursor != null && cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                val seenNames = mutableSetOf<String>()
+                do {
+                    val name = cursor.getString(nameIndex) ?: ""
+                    val number = cursor.getString(numberIndex) ?: ""
+                    val cleanName = name.trim()
+                    if (cleanName.isNotEmpty() && cleanName.first().lowercaseChar() == initial) {
+                        if (seenNames.add(cleanName.lowercase(Locale.ROOT))) {
+                            results.add(ContactChoice(cleanName, number))
+                        }
+                    }
+                } while (cursor.moveToNext())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Contacts startingWith query failed: ${e.message}")
+        } finally {
+            cursor?.close()
+        }
+        return results
+    }
+
+    private fun isWhatsAppCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return lower.contains("whatsapp") || lower.contains("whats app") || lower.contains("\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a")
+    }
+
+    private fun isInstagramCommand(cmd: String): Boolean {
+        val lower = cmd.lowercase(Locale.ROOT).trim()
+        return lower.contains("instagram") || lower.contains("insta ") || lower == "insta" || lower.contains("\u0907\u0902\u0938\u094d\u091f\u093e\u0917\u094d\u0930\u093e\u092e")
+    }
+
+    private fun cleanExtractedMessage(msg: String): String {
+        var m = msg.trim()
+        val removePrefixes = listOf(
+            "ki ", "ke ", "message bhejo ", "msg bhejo ", "message karo ", "msg karo ",
+            "bhejo ", "karo ", "likho ", "bolo ", "send karo "
+        )
+        for (p in removePrefixes) {
+            if (m.lowercase(Locale.ROOT).startsWith(p)) {
+                m = m.substring(p.length).trim()
+            }
+        }
+        return m
+    }
+
+    private fun parseMessagingTargetAndText(rawCommand: String, appName: String): Pair<String, String> {
+        var text = rawCommand.lowercase(Locale.ROOT).trim()
+        text = text.replace("whats app", "whatsapp")
+
+        val appPrefixes = listOf(
+            "$appName par", "$appName pe", "$appName me", "$appName mein", appName,
+            "\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a \u092a\u0930", "\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a \u092a\u0947", "\u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a"
+        )
+        var cleanedStart = text
+        for (ap in appPrefixes) {
+            if (cleanedStart.startsWith("$ap ")) {
+                cleanedStart = cleanedStart.substring(ap.length).trim()
+                break
+            }
+        }
+
+        // Pattern A: "[target] ko (message/msg/text/likho/bolo/bhejo) [ki/ke]? [message]"
+        val regexA = Regex("""^(.+?)\s+ko\s+(?:message|msg|text)?\s*(?:bhejo|karo|likho|bolo|send karo|karna hai)\s*(?:ki|ke)?\s*(.*)$""")
+        val matchA = regexA.find(cleanedStart)
+        if (matchA != null) {
+            val target = matchA.groupValues[1].trim()
+            val msg = cleanExtractedMessage(matchA.groupValues[2].trim())
+            return Pair(target, msg)
+        }
+
+        // Pattern B: "(message/msg/text) (bhejo/karo/likho/send karo) [target] ko [ki/ke]? [message]"
+        val regexB = Regex("""^(?:message|msg|text)\s+(?:bhejo|karo|likho|send karo)\s+(.+?)\s+ko\s*(?:ki|ke)?\s*(.*)$""")
+        val matchB = regexB.find(cleanedStart)
+        if (matchB != null) {
+            val target = matchB.groupValues[1].trim()
+            val msg = cleanExtractedMessage(matchB.groupValues[2].trim())
+            return Pair(target, msg)
+        }
+
+        // Pattern C: "[target] ko [app] (message/karo/bhejo) [ki/ke]? [message]"
+        val regexC = Regex("""^(.+?)\s+ko\s+$appName\s*(?:message|msg|karo|bhejo|karna hai)?\s*(?:ki|ke)?\s*(.*)$""")
+        val matchC = regexC.find(text)
+        if (matchC != null) {
+            val target = matchC.groupValues[1].trim()
+            val msg = cleanExtractedMessage(matchC.groupValues[2].trim())
+            return Pair(target, msg)
+        }
+
+        // Pattern D: "[target] ko [message]"
+        val regexD = Regex("""^(.+?)\s+ko\s*(.*)$""")
+        val matchD = regexD.find(cleanedStart)
+        if (matchD != null) {
+            val target = matchD.groupValues[1].trim()
+            val msg = cleanExtractedMessage(matchD.groupValues[2].trim())
+            return Pair(target, msg)
+        }
+
+        // Fallback: remove stop words
+        var rem = text
+        for (ap in appPrefixes) rem = rem.replace(ap, " ")
+        rem = rem.replace("message bhejo", " ")
+            .replace("message karo", " ")
+            .replace("message", " ")
+            .replace("bhejo", " ")
+            .replace("karo", " ")
+            .replace("kholo", " ")
+            .replace("open", " ")
+            .replace("chalu", " ")
             .trim()
 
-        val match = findContactNumber(context, target)
-        if (match != null) {
-            val (name, number) = match
-            val cleanPhone = number.replace(Regex("[^0-9]"), "")
-            val formatted = if (cleanPhone.length == 10) "91$cleanPhone" else cleanPhone
+        return Pair(rem, "")
+    }
+
+    private fun handleWhatsAppMessaging(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val lower = command.lowercase(Locale.ROOT).trim()
+
+        // If simple open
+        if (lower == "whatsapp" || lower == "open whatsapp" || lower == "whatsapp kholo" ||
+            lower == "whatsapp open" || lower == "whatsapp chalu karo") {
+            launchAppByName(context, "whatsapp", callback)
+            return
+        }
+
+        val (target, message) = parseMessagingTargetAndText(lower, "whatsapp")
+
+        if (target.isEmpty() && message.isEmpty()) {
+            launchAppByName(context, "whatsapp", callback)
+            return
+        }
+
+        if (target.isNotEmpty()) {
+            val match = findContactNumber(context, target)
+            if (match != null) {
+                val (name, number) = match
+                val digits = number.replace(Regex("[^0-9]"), "")
+                val formatted = if (digits.length == 10) "91$digits" else digits
+
+                val encodedMsg = if (message.isNotEmpty()) {
+                    try { URLEncoder.encode(message, "UTF-8") } catch (e: Exception) { "" }
+                } else ""
+
+                val uriStr = if (encodedMsg.isNotEmpty()) {
+                    "https://api.whatsapp.com/send?phone=$formatted&text=$encodedMsg"
+                } else {
+                    "https://api.whatsapp.com/send?phone=$formatted"
+                }
+
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uriStr)).apply {
+                        setPackage("com.whatsapp")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+
+                    if (message.isNotEmpty()) {
+                        mainHandler.postDelayed({
+                            JarvisAccessibilityService.instance?.clickSendButton(retries = 8, delayMs = 350)
+                        }, 700)
+                        callback("Ji Boss, WhatsApp par $name ko '$message' send kar diya hai.", true)
+                    } else {
+                        callback("Ji Boss, WhatsApp par $name ki chat open kar di hai.", true)
+                    }
+                    return
+                } catch (e: Exception) {
+                    Log.w(TAG, "Direct WhatsApp URI failed: ${e.message}")
+                }
+            }
+        }
+
+        // Fallback: If contact not found or target empty, share message via Intent
+        if (message.isNotEmpty()) {
             try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$formatted")).apply {
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    setPackage("com.whatsapp")
+                    putExtra(Intent.EXTRA_TEXT, message)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
-                callback("Ji Boss, WhatsApp par $name ki chat open kar di hai.", true)
+                context.startActivity(sendIntent)
+                callback("Ji Boss, WhatsApp open karke message likh diya hai. Contact select karein.", true)
                 return
             } catch (e: Exception) {}
         }
 
-        val launchIntent = context.packageManager.getLaunchIntentForPackage("com.whatsapp")
+        launchAppByName(context, "whatsapp", callback)
+    }
+
+    private fun handleInstagramMessaging(context: Context, command: String, callback: (String, Boolean) -> Unit) {
+        val lower = command.lowercase(Locale.ROOT).trim()
+
+        if (lower == "instagram" || lower == "insta" || lower == "open instagram" || lower == "instagram kholo" ||
+            lower == "instagram open" || lower == "instagram chalu karo") {
+            launchAppByName(context, "instagram", callback)
+            return
+        }
+
+        val (target, message) = parseMessagingTargetAndText(lower, "instagram")
+
+        val launchIntent = context.packageManager.getLaunchIntentForPackage("com.instagram.android")
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
-            callback("Ji Boss, WhatsApp open kar diya hai.", true)
+
+            if (target.isNotEmpty() || message.isNotEmpty()) {
+                mainHandler.postDelayed({
+                    val acc = JarvisAccessibilityService.instance
+                    if (acc != null) {
+                        acc.clickElementByText("direct")
+                        acc.clickElementByText("messages")
+                        acc.clickElementByText("search")
+                        if (target.isNotEmpty()) {
+                            mainHandler.postDelayed({
+                                acc.typeTextInFocusedField(target)
+                                mainHandler.postDelayed({
+                                    acc.clickElementByText(target)
+                                    if (message.isNotEmpty()) {
+                                        mainHandler.postDelayed({
+                                            acc.typeTextInFocusedField(message)
+                                            mainHandler.postDelayed({
+                                                acc.clickSendButton(retries = 6, delayMs = 350)
+                                            }, 400)
+                                        }, 600)
+                                    }
+                                }, 500)
+                            }, 500)
+                        }
+                    }
+                }, 900)
+
+                if (message.isNotEmpty()) {
+                    callback("Ji Boss, Instagram par ${if (target.isNotEmpty()) target else "user"} ko '$message' send karne ki koshish ki.", true)
+                } else {
+                    callback("Ji Boss, Instagram par ${if (target.isNotEmpty()) target else ""} ki chat open kar di hai.", true)
+                }
+                return
+            } else {
+                callback("Ji Boss, Instagram open kar diya hai.", true)
+                return
+            }
         } else {
-            callback("Boss, phone mein WhatsApp installed nahi hai.", false)
+            callback("Boss, phone mein Instagram installed nahi hai.", false)
         }
     }
 
